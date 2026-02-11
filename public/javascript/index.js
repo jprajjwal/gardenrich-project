@@ -1,77 +1,61 @@
-function showCounter(btn) {
-  const container = btn.parentElement;
-  const counter = container.querySelector(".counter-control");
+// DELETE: let cartTotal = 0; 
+// DELETE: function updateCartCount() { ... }
 
-  btn.classList.add("hidden");
-  counter.classList.remove("hidden");
-  counter.classList.add("flex");
+function showCounter(btn) {
+    const parent = btn.closest('.product');
+    const productId = parent.getAttribute('data-id');
+    const counter = parent.querySelector(".counter-control");
+    const qtySpan = parent.querySelector(".qty-text");
+
+    // UI Feedback: Show the counter immediately
+    btn.classList.add("hidden");
+    counter.classList.remove("hidden");
+    counter.classList.add("flex");
+    qtySpan.innerText = "1";
+
+    // 1. Send the update to the server.
+    // 2. The server returns the NEW totalItems.
+    // 3. updateCartOnServer updates the badge.
+    updateCartOnServer(productId, 1);
 }
 
 function updateQty(btn, change) {
-  const counterControl = btn.parentElement;
-  const qtySpan = counterControl.querySelector(".qty-text");
-  let currentQty = parseInt(qtySpan.innerText);
+    const parent = btn.closest('.product');
+    const productId = parent.getAttribute('data-id');
+    const qtySpan = parent.querySelector(".qty-text");
+    let currentQty = parseInt(qtySpan.innerText);
 
-  currentQty += change;
+    currentQty += change;
 
-  if (currentQty < 1) {
-    counterControl.classList.add("hidden");
-    counterControl.classList.remove("flex");
-    counterControl
-      .parentElement
-      .querySelector(".add-btn")
-      .classList.remove("hidden");
+    if (currentQty < 1) {
+        parent.querySelector(".counter-control").classList.add("hidden");
+        parent.querySelector(".counter-control").classList.remove("flex");
+        parent.querySelector(".add-btn").classList.remove("hidden");
+        currentQty = 0; 
+    } else {
+        qtySpan.innerText = currentQty;
+    }
 
-    qtySpan.innerText = "1";
-  } else {
-    qtySpan.innerText = currentQty;
-  }
+    // Always update the server and let it return the correct badge count
+    updateCartOnServer(productId, currentQty);
 }
 
-//cart
-
-let cartTotal = 0;
-
-function updateCartCount() {
-  document.getElementById("cartCount").innerText = cartTotal;
-}
-
-function showCounter(btn) {
-  const container = btn.parentElement;
-  const counter = container.querySelector(".counter-control");
-
-  btn.classList.add("hidden");
-  counter.classList.remove("hidden");
-  counter.classList.add("flex");
-
-  // first add = 1 item
-  cartTotal += 1;
-  updateCartCount();
-}
-
-function updateQty(btn, change) {
-  const counterControl = btn.parentElement;
-  const qtySpan = counterControl.querySelector(".qty-text");
-  let currentQty = parseInt(qtySpan.innerText);
-
-  currentQty += change;
-
-  if (currentQty < 1) {
-    // remove from cart
-    counterControl.classList.add("hidden");
-    counterControl.classList.remove("flex");
-    counterControl
-      .parentElement
-      .querySelector(".add-btn")
-      .classList.remove("hidden");
-
-    qtySpan.innerText = "1";
-
-    cartTotal -= 1;
-  } else {
-    qtySpan.innerText = currentQty;
-    cartTotal += change;
-  }
-
-  updateCartCount();
+async function updateCartOnServer(productId, quantity) {
+    try {
+        const response = await fetch('/cart/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, quantity })
+        });
+        
+        const data = await response.json();
+        
+        // Update the badge with the REAL total from the database
+        const badge = document.getElementById('cartCount');
+        if (badge) {
+            badge.innerText = data.totalItems;
+        }
+    } catch (err) {
+        console.error("Cart update failed:", err);
+    }
 }

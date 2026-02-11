@@ -11,10 +11,28 @@
 <body>
     
 
-    <div class="min-h-screen flex items-center justify-center">
-        <h1 class="text-4xl font-bold">Under Construction...</h1>
-    </div>
+    <div class="min-h-screen flex items-center justify-center bg-green-50 px-4">
+    <div class="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-zinc-100">
+        <h2 class="text-3xl font-black text-green-700 text-center mb-2">GardenRich</h2>
+        <p class="text-zinc-500 text-center mb-8">Login to start shopping</p>
 
+        <form action="/login" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-zinc-700 mb-1">Email</label>
+                <input type="email" name="email" required placeholder="email@example.com" class="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-green-500">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-zinc-700 mb-1">Password</label>
+                <input type="password" name="password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-green-500">
+            </div>
+            <button type="submit" class="w-full bg-green-700 text-white py-4 rounded-xl font-bold hover:bg-green-800 transition-all">LOG IN</button>
+            <div class="text-center mt-6">
+                <p class="text-sm text-zinc-500">Don’t have an account?
+                <a href="/signup" class="font-bold text-green-700 hover:underline">Sign up</a> </p>
+            </div>
+        </form>
+    </div>
+</div>
 
 <script src="/javascript/index.js"></script>
 </body>
