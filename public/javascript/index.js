@@ -59,3 +59,23 @@ async function updateCartOnServer(productId, quantity) {
         console.error("Cart update failed:", err);
     }
 }
+
+
+// ================= USER DROPDOWN =================
+document.addEventListener("DOMContentLoaded", function () {
+    const userButton = document.getElementById("userButton");
+    const userMenu = document.getElementById("userMenu");
+
+    if (userButton && userMenu) {
+        userButton.addEventListener("click", function (e) {
+            e.stopPropagation();
+            userMenu.classList.toggle("hidden");
+        });
+
+        document.addEventListener("click", function (e) {
+            if (!e.target.closest("#userButton") && !e.target.closest("#userMenu")) {
+                userMenu.classList.add("hidden");
+            }
+        });
+    }
+});
