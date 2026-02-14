@@ -25,8 +25,8 @@
                 <div class="lg:w-2/3 space-y-4">
                     <% if (cart.items.length> 0) { %>
                         <% cart.items.forEach(item=> { %>
-                            <div
-                                class="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-zinc-100">
+                            <div class="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-zinc-100"
+                                data-id="<%= item.productId.id %>" data-price="<%= item.productId.price %>">
                                 <div class="flex items-center gap-4">
                                     <div class="w-20 h-20 bg-zinc-100 rounded-lg overflow-hidden">
                                         <img src="<%= item.productId.image %>" class="w-full h-full object-cover">
@@ -43,13 +43,21 @@
                                     </div>
                                 </div>
 
-                                <div class="flex items-center bg-zinc-100 rounded-md overflow-hidden">
-                                    <button class="px-3 py-1 hover:bg-zinc-200">-</button>
-                                    <span class="px-3 py-1 font-bold">
+                                <div class="flex items-center bg-zinc-100 rounded-md overflow-hidden"
+                                    data-id="<%= item.productId.id %>">
+
+                                    <button onclick="updateCartQty(this, -1)"
+                                        class="px-3 py-1 hover:bg-zinc-200">-</button>
+
+                                    <span class="px-3 py-1 font-bold qty-text">
                                         <%= item.quantity %>
                                     </span>
-                                    <button class="px-3 py-1 hover:bg-zinc-200">+</button>
+
+                                    <button onclick="updateCartQty(this, 1)"
+                                        class="px-3 py-1 hover:bg-zinc-200">+</button>
+
                                 </div>
+
                             </div>
                             <% }) %>
                                 <% } else { %>
@@ -91,9 +99,10 @@
                         <div class="mt-6">
                             <div class="flex justify-between items-end mb-1">
                                 <span class="text-xl font-bold">Total Amount</span>
-                                <span class="text-2xl font-black text-zinc-900">Rs. <%= cart.items.reduce((acc, item)=>
-                                        acc
-                                        + (item.productId.price * item.quantity), 0) %></span>
+                                <span id="cartTotal" class="text-2xl font-black text-zinc-900">
+                                    Rs. <%= cart.items.reduce((acc, item)=>
+                                        acc + (item.productId.price * item.quantity), 0) %>
+                                </span>
                             </div>
                             <p class="text-right text-xs text-zinc-400 italic">Inclusive of all taxes</p>
                         </div>

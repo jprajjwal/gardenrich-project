@@ -1,6 +1,3 @@
-// DELETE: let cartTotal = 0; 
-// DELETE: function updateCartCount() { ... }
-
 function showCounter(btn) {
     const parent = btn.closest('.product');
     const productId = parent.getAttribute('data-id');
@@ -60,22 +57,63 @@ async function updateCartOnServer(productId, quantity) {
     }
 }
 
+function updateCartQty(btn, change) {
+    // Look for the closest div that actually has the data-price attribute
+    const itemContainer = btn.closest("[data-price]"); 
+    const productId = itemContainer.getAttribute("data-id");
+    const qtySpan = itemContainer.querySelector(".qty-text");
 
-// ================= USER DROPDOWN =================
-document.addEventListener("DOMContentLoaded", function () {
-    const userButton = document.getElementById("userButton");
-    const userMenu = document.getElementById("userMenu");
+    let currentQty = parseInt(qtySpan.innerText);
+    currentQty += change;
 
-    if (userButton && userMenu) {
-        userButton.addEventListener("click", function (e) {
-            e.stopPropagation();
-            userMenu.classList.toggle("hidden");
-        });
+    // Prevent negative quantities
+    if (currentQty < 0) return;
 
-        document.addEventListener("click", function (e) {
-            if (!e.target.closest("#userButton") && !e.target.closest("#userMenu")) {
-                userMenu.classList.add("hidden");
-            }
-        });
+    // Update UI immediately for responsiveness
+    qtySpan.innerText = currentQty;
+
+    // Send to server
+    updateCartOnServer(productId, currentQty);
+
+    // If qty is 0, remove the item from the list
+    if (currentQty === 0) {
+        itemContainer.remove();
+    }
+
+    // Recalculate the summary
+    updateOrderSummary();
+}
+
+function updateOrderSummary() {
+    let total = 0;
+
+    document.querySelectorAll("[data-price]").forEach(item => {
+        const price = parseFloat(item.getAttribute("data-price"));
+        const qty = parseInt(item.querySelector(".qty-text")?.innerText || 0);
+        total += price * qty;
+    });
+
+    const totalElement = document.getElementById("cartTotal");
+    if (totalElement) {
+        totalElement.innerText = "Rs. " + total;
+    }
+}
+
+
+
+function toggleUserMenu(event) {
+    if (event) event.stopPropagation(); // Prevents the document click from closing it immediately
+    const menu = document.getElementById("userMenu");
+    if (menu) {
+        menu.classList.toggle("hidden");
+    }
+}
+
+document.addEventListener("click", function (e) {
+    const menu = document.getElementById("userMenu");
+    const button = document.getElementById("userButton");
+    
+    if (menu && !menu.contains(e.target) && !button.contains(e.target)) {
+        menu.classList.add("hidden");
     }
 });
