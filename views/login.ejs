@@ -8,32 +8,74 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 
-<body>
-    
-
-    <div class="min-h-screen flex items-center justify-center bg-green-50 px-4">
-    <div class="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-zinc-100">
-        <h2 class="text-3xl font-black text-green-700 text-center mb-2">GardenRich</h2>
-        <p class="text-zinc-500 text-center mb-8">Login to start shopping</p>
-
-        <form action="/login" method="POST" class="space-y-4">
-            <div>
-                <label class="block text-sm font-bold text-zinc-700 mb-1">Email</label>
-                <input type="email" name="email" required placeholder="email@example.com" class="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-green-500">
-            </div>
-            <div>
-                <label class="block text-sm font-bold text-zinc-700 mb-1">Password</label>
-                <input type="password" name="password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-green-500">
-            </div>
-            <button type="submit" class="w-full bg-green-700 text-white py-4 rounded-xl font-bold hover:bg-green-800 transition-all">LOG IN</button>
-            <div class="text-center mt-6">
-                <p class="text-sm text-zinc-500">Don’t have an account?
-                <a href="/signup" class="font-bold text-green-700 hover:underline">Sign up</a> </p>
-            </div>
-        </form>
+<body class="bg-green-100 font-sans antialiased text-zinc-900">
+    <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10">
+        <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-green-100 rounded-full blur-[120px] opacity-50"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-green-50 rounded-full blur-[120px] opacity-50"></div>
     </div>
-</div>
 
+    <div class="min-h-screen flex items-center justify-center px-4">
+        <div class="max-w-md w-full">
+            
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-black text-zinc-900 tracking-tighter">
+                    Garden<span class="text-green-600">Rich</span>
+                </h1>
+                <p class="text-zinc-500 font-medium mt-2">Welcome back! Please enter your details.</p>
+            </div>
+
+            <div class="bg-white/80 backdrop-blur-xl p-10 rounded-[2.5rem] shadow-2xl shadow-green-900/5 border border-white">
+                <form action="/login" method="POST" class="space-y-6">
+                    
+                    <div class="group">
+                        <label class="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 ml-1">Email Address</label>
+                        <div class="relative">
+                            <input type="email" name="email" required placeholder="name@gmail.com" 
+                                class="w-full bg-zinc-50 border border-zinc-200 px-5 py-4 rounded-2xl outline-none transition-all focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/10 text-zinc-800 font-medium">
+                        </div>
+                    </div>
+
+                    <div class="group">
+                        <div class="flex justify-between items-center mb-2 ml-1">
+                            <label class="block text-xs font-black uppercase tracking-widest text-zinc-500">Password</label>
+                            <a href="/forgot-password" class="text-xs font-bold text-green-700 hover:text-green-800">Forgot?</a>
+                        </div>
+                        <div class="relative">
+                            <input type="password" name="password" required placeholder="••••••••" 
+                                class="w-full bg-zinc-50 border border-zinc-200 px-5 py-4 rounded-2xl outline-none transition-all focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/10 text-zinc-800 font-medium">
+                            <div class="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-green-500 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" 
+                        class="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-700 transition-all shadow-xl shadow-zinc-200 active:scale-[0.98]">
+                        Login In
+                    </button>
+
+                    <div class="relative flex items-center py-2">
+                        <div class="flex-grow border-t border-zinc-100"></div>
+                        <span class="flex-shrink mx-4 text-zinc-400 text-xs font-bold uppercase tracking-widest">New to us?</span>
+                        <div class="flex-grow border-t border-zinc-100"></div>
+                    </div>
+
+                    <a href="/signup" 
+                        class="block w-full text-center border-2 border-zinc-300 text-zinc-800 py-2 rounded-2xl font-bold hover:bg-zinc-100 transition-all">
+                        Create an Account
+                    </a>
+                </form>
+            </div>
+
+            <p class="text-center mt-10 text-zinc-400 text-sm font-medium">
+                By signing in, you agree to our 
+                <a href="#" class="text-zinc-600 underline">Terms</a> and 
+                <a href="#" class="text-zinc-600 underline">Privacy</a>
+            </p>
+        </div>
+    </div>
 <script src="/javascript/index.js"></script>
 </body>
 

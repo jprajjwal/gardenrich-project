@@ -80,9 +80,10 @@
                         <div class="space-y-3 text-zinc-600 border-b pb-6">
                             <div class="flex justify-between">
                                 <span>Order Total</span>
-                                <span>Rs. <%= cart.items.reduce((acc, item)=> acc + (item.productId.price *
-                                        item.quantity),
-                                        0) %></span>
+                                <span id="summaryOrderTotal" class="cart-total-display">
+                                    Rs. <%= cart.items.reduce((acc, item)=> acc + (item.productId.price *
+                                        item.quantity), 0) %>
+                                </span>
                             </div>
                             <div class="flex justify-between">
                                 <span>Shipping</span>
@@ -93,9 +94,10 @@
                         <div class="mt-6">
                             <div class="flex justify-between items-end mb-1">
                                 <span class="text-xl font-bold">Total Amount</span>
-                                <span id="cartTotal" class="text-2xl font-black text-zinc-900">
-                                    Rs. <%= cart.items.reduce((acc, item)=>
-                                        acc + (item.productId.price * item.quantity), 0) %>
+                                <span id="summaryFinalTotal"
+                                    class="text-2xl font-black text-zinc-900 cart-total-display">
+                                    Rs. <%= cart.items.reduce((acc, item)=> acc + (item.productId.price *
+                                        item.quantity), 0) %>
                                 </span>
                             </div>
                             <p class="text-right text-xs text-zinc-400 italic">Inclusive of all taxes</p>

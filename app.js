@@ -47,10 +47,31 @@ app.use(async (req, res, next) => {
 });
 
 app.get("/", async (req, res) => {
-  const { data: products, error } = await supabase.from("products").select("*");
+  try {
+    const searchQuery = req.query.search;
 
-  if (error) console.error(error);
-  res.render("index", { products: products || [] });
+    // Start building the query
+    let queryBuilder = supabase.from("products").select("*");
+
+    // If a search term exists, filter the results
+    if (searchQuery) {
+      // .ilike('column', '%value%') handles case-insensitive search
+      queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+    }
+
+    const { data: products, error } = await queryBuilder;
+
+    if (error) throw error;
+
+    res.render("index", {
+      products,
+      query: searchQuery || ""
+       // assuming you pass user for the header
+    });
+  } catch (err) {
+    console.error("Search Error:", err.message);
+    res.status(500).send("Error fetching products");
+  }
 });
 
 app.get("/login", (req, res) => {
@@ -88,12 +109,11 @@ app.post("/login", async (req, res) => {
 });
 
 function isAdmin(req, res, next) {
-    if (!req.session.user || req.session.user.role !== "ADMIN") {
-        return res.status(403).send("Access Denied");
-    }
-    next();
+  if (!req.session.user || req.session.user.role !== "ADMIN") {
+    return res.status(403).send("Access Denied");
+  }
+  next();
 }
-
 
 app.get("/signup", (req, res) => {
   res.render("signup");
@@ -141,19 +161,16 @@ app.get("/logout", (req, res) => {
 });
 
 app.get("/admin", isAdmin, (req, res) => {
-    res.render("admin");
+  res.render("admin");
 });
 
 app.post("/admin/add-product", isAdmin, async (req, res) => {
-    const { name, weight, price, image } = req.body;
+  const { name, weight, price, image } = req.body;
 
-    await supabase.from("products").insert([
-        { name, weight, price, image }
-    ]);
+  await supabase.from("products").insert([{ name, weight, price, image }]);
 
-    res.redirect("/");
+  res.redirect("/");
 });
-
 
 app.get("/cart", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
