@@ -9,43 +9,70 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 
-<body>
+<body class="bg-zinc-50 font-sans antialiased text-zinc-900">
     <%- include("partials/header") %>
 
-    <div class="w-full min-h-screen py-10 px-20 bg-green-100">
-        <h1 class="font-bold mb-8 text-2xl">Best Sellers</h1>
-        <div class="products grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+    <div class="max-w-7xl mx-auto py-12 px-6 lg:px-8">
+        <div class="flex items-end justify-between mb-10">
+            <div>
+                <span class="text-green-600 font-bold tracking-widest text-xs uppercase">Curated Collection</span>
+                <h1 class="font-extrabold text-4xl mt-1 tracking-tight text-zinc-900">Best Sellers</h1>
+            </div>
+            <!-- <a href="/products" class="text-sm font-semibold text-green-700 hover:text-green-800 transition-colors">
+                View All Products &rarr;
+            </a> -->
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
             <% products.forEach(product=> { %>
-                <div class="product bg-white p-4 rounded-lg shadow-lg" data-id="<%= product.id %>">
-                    <img src="<%= product.image %>" class="w-full h-48 object-cover rounded-lg bg-zinc-200">
-                    <h3 class="text-xl tracking-tighter mt-3">
-                        <%= product.name %>
-                    </h3>
-                    <h5 class="text-zinc-500 mt-2">
-                        <%= product.weight %>
-                    </h5>
-                    <div class="flex justify-between items-center mt-4">
-                        <h3 class="font-bold">Rs <%= product.price %>
-                        </h3>
-                        <div class="quantity-controls flex items-center">
-                            <button onclick="showCounter(this)"
-                                class="add-btn bg-green-600 text-white px-6 py-1.5 rounded-md text-sm font-medium">ADD</button>
-                            <div
-                                class="counter-control hidden items-center bg-green-600 text-white rounded-md overflow-hidden">
-                                <button onclick="updateQty(this, -1)"
-                                    class="px-3 py-1.5 hover:bg-green-700 font-bold">-</button>
-                                <span class="qty-text px-3 py-1.5 font-bold text-sm">1</span>
-                                <button onclick="updateQty(this, 1)"
-                                    class="px-3 py-1.5 hover:bg-green-700 font-bold">+</button>
+                <div class="product group bg-white rounded-2xl border border-zinc-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden" 
+                     data-id="<%= product.id %>">
+                    
+                    <div class="relative aspect-square overflow-hidden bg-zinc-100">
+                        <img src="<%= product.image %>" 
+                             class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                        
+                        <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm">
+                            <span class="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Top Rated</span>
+                        </div>
+                    </div>
+
+                    <div class="p-5">
+                        <div class="mb-4">
+                            <h3 class="text-lg font-bold text-zinc-800 leading-tight mb-1">
+                                <%= product.name %>
+                            </h3>
+                            <p class="text-sm text-zinc-400 font-medium">
+                                <%= product.weight %>
+                            </p>
+                        </div>
+
+                        <div class="flex justify-between items-center pt-2 border-t border-zinc-50">
+                            <div>
+                                <span class="text-xs text-zinc-400 block font-bold uppercase">Price</span>
+                                <span class="text-xl font-black text-green-700">Rs. <%= product.price %></span>
+                            </div>
+
+                            <div class="quantity-controls flex items-center">
+                                <button onclick="showCounter(this)"
+                                    class="add-btn bg-zinc-900 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-zinc-200 active:scale-95">
+                                    ADD TO CART
+                                </button>
+                                
+                                <div class="counter-control hidden items-center bg-zinc-900 text-white rounded-xl overflow-hidden shadow-lg shadow-zinc-200 transition-all">
+                                    <button onclick="updateQty(this, -1)"
+                                        class="px-4 py-2.5 hover:bg-zinc-800 text-lg font-light transition-colors">-</button>
+                                    <span class="qty-text px-2 py-2.5 font-bold text-sm w-8 text-center">1</span>
+                                    <button onclick="updateQty(this, 1)"
+                                        class="px-4 py-2.5 hover:bg-zinc-800 text-lg font-light transition-colors">+</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <% }) %>
+            <% }) %>
         </div>
     </div>
-
     <script src="/javascript/index.js"></script>
 </body>
-
 </html>
