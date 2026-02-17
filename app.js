@@ -253,4 +253,42 @@ app.post("/cart/update", async (req, res) => {
   res.json({ totalItems });
 });
 
+app.get("/profile", async (req, res) => {
+    if (!req.session.user) return res.redirect("/login");
+
+    const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", req.session.user.id)
+        .single();
+
+    if (error) {
+        console.error("Error fetching profile:", error.message);
+        return res.status(500).send("Could not load profile.");
+    }
+
+    res.render("profile", { profile });
+});
+
+// POST Update Profile
+app.post("/profile/update", async (req, res) => {
+    if (!req.session.user) return res.status(401).send("Unauthorized");
+
+    const { name, mobile } = req.body;
+
+    const { error } = await supabase
+        .from("profiles")
+        .update({ name, mobile })
+        .eq("id", req.session.user.id);
+
+    if (error) {
+        return res.status(500).send("Update failed: " + error.message);
+    }
+
+    // Update the session name so the header reflects the change immediately
+    req.session.user.name = name;
+
+    res.redirect("/profile");
+});
+
 app.listen(3000);
