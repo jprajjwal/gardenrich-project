@@ -3,6 +3,8 @@ const session = require("express-session");
 const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const path = require("path");
+const multer = require("multer");
+const upload = multer({ storage: multer.memoryStorage() }); // Store file in memory briefly
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -164,12 +166,51 @@ app.get("/admin", isAdmin, (req, res) => {
   res.render("admin");
 });
 
-app.post("/admin/add-product", isAdmin, async (req, res) => {
-  const { name, weight, price, image } = req.body;
+app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
+    try {
+        const { name, weightValue, unit, price } = req.body;
+        const file = req.file;
 
-  await supabase.from("products").insert([{ name, weight, price, image }]);
+        if (!file) return res.status(400).send("Please upload an image.");
 
-  res.redirect("/");
+        // 1. Create a unique filename
+        const fileName = `${Date.now()}-${file.originalname}`;
+
+        // 2. Upload to Supabase Storage Bucket
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from("product-images") // Must match your bucket name in Supabase
+            .upload(fileName, file.buffer, {
+                contentType: file.mimetype,
+                upsert: false
+            });
+
+        if (uploadError) throw uploadError;
+
+        // 3. Get the Public URL of the uploaded file
+        const { data: urlData } = supabase.storage
+            .from("product-images")
+            .getPublicUrl(fileName);
+
+        const publicImageUrl = urlData.publicUrl;
+
+        // 4. Insert into 'products' table using the Public URL
+        const weight = `${weightValue} ${unit}`;
+        const { error: dbError } = await supabase
+            .from("products")
+            .insert([{ 
+                name, 
+                weight, 
+                price: parseFloat(price), 
+                image: publicImageUrl // This is the full https:// link
+            }]);
+
+        if (dbError) throw dbError;
+
+        res.redirect("/");
+    } catch (err) {
+        console.error("Upload Error:", err.message);
+        res.status(500).send("Failed to add product: " + err.message);
+    }
 });
 
 app.get("/cart", async (req, res) => {

@@ -24,7 +24,7 @@
                         store.</p>
                 </div>
 
-                <form action="/admin/add-product" method="POST" class="p-8 space-y-6">
+                <form action="/admin/add-product" method="POST" enctype="multipart/form-data" class="p-8 space-y-6">
 
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Product
@@ -68,16 +68,14 @@
                         <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Product
                             Image</label>
                         <div class="relative group">
-                            <input type="file" id="imageFile" accept="image/*" class="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-zinc-900 file:text-white hover:file:bg-green-700 cursor:pointer">
-                            <input type="hidden" name="image" id="imageUrl">
+                            <input type="file" name="imageFile" accept="image/*" required
+                                class="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-2xl file:bg-zinc-900 file:text-white cursor-pointer">
                         </div>
-                        <p id="uploadStatus" class="mt-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                        </p>
                     </div>
 
                     <div class="pt-4">
                         <button type="submit"
-                            class="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-700 transition-all shadow-lg shadow-zinc-200 active:scale-[0.98]">
+                            class="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-700 transition-all">
                             List Product
                         </button>
                     </div>
