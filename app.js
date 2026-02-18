@@ -332,4 +332,56 @@ app.post("/profile/update", async (req, res) => {
     res.redirect("/profile");
 });
 
+app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
+    try {
+        const productId = req.params.id;
+        const { imageUrl } = req.body;
+
+        // 1. Delete from Database
+        const { error: dbError } = await supabase
+            .from("products")
+            .delete()
+            .eq("id", productId);
+
+        if (dbError) throw dbError;
+
+        // 2. Delete from Storage (if it's a Supabase URL)
+        if (imageUrl && imageUrl.includes("supabase.co")) {
+            // Extract the filename from the URL
+            const fileName = imageUrl.split('/').pop();
+            
+            await supabase.storage
+                .from("product-images")
+                .remove([fileName]);
+        }
+
+        res.status(200).json({ message: "Product deleted successfully" });
+    } catch (err) {
+        console.error("Delete Error:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/checkout", (req, res) => {
+    // You would typically pass your cart items here
+    res.render("checkout");
+});
+
+app.get("/privacy", (req, res) => {
+    res.render("privacy");
+});
+
+app.get("/returns", (req, res) => {
+    res.render("refund");
+});
+
+app.get("/terms", (req, res) =>{
+    res.render("terms")
+}); 
+
+  
+app.get("/delivery", (req, res) =>{
+  res.render("delivery")
+});
+
 app.listen(3000);

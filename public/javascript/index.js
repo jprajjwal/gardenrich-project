@@ -142,3 +142,25 @@ document.addEventListener("click", function (e) {
     }
 });
 
+async function deleteProduct(productId, imageUrl) {
+    if (!confirm("Are you sure you want to delete this product?")) return;
+
+    try {
+        const response = await fetch(`/admin/delete-product/${productId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageUrl }) 
+        });
+
+        if (response.ok) {
+            // Remove the element from the DOM immediately for a smooth UI
+            document.querySelector(`[data-id="${productId}"]`).remove();
+        } else {
+            const errorData = await response.json();
+            alert("Error: " + errorData.error);
+        }
+    } catch (err) {
+        console.error("Delete error:", err);
+        alert("Server communication error.");
+    }
+}
