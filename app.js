@@ -5,6 +5,14 @@ const app = express();
 const path = require("path");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() }); // Store file in memory briefly
+const nodemailer = require("nodemailer");
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "prajjwalj02@gmail.com", // your gmail
+    pass: "iwxedcnijtuvtuzr", // Gmail app password (not your real password)
+  },
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -67,8 +75,8 @@ app.get("/", async (req, res) => {
 
     res.render("index", {
       products,
-      query: searchQuery || ""
-       // assuming you pass user for the header
+      query: searchQuery || "",
+      // assuming you pass user for the header
     });
   } catch (err) {
     console.error("Search Error:", err.message);
@@ -166,52 +174,57 @@ app.get("/admin", isAdmin, (req, res) => {
   res.render("admin");
 });
 
-app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
+app.post(
+  "/admin/add-product",
+  isAdmin,
+  upload.single("imageFile"),
+  async (req, res) => {
     try {
-        const { name, weightValue, unit, price } = req.body;
-        const file = req.file;
+      const { name, weightValue, unit, price } = req.body;
+      const file = req.file;
 
-        if (!file) return res.status(400).send("Please upload an image.");
+      if (!file) return res.status(400).send("Please upload an image.");
 
-        // 1. Create a unique filename
-        const fileName = `${Date.now()}-${file.originalname}`;
+      // 1. Create a unique filename
+      const fileName = `${Date.now()}-${file.originalname}`;
 
-        // 2. Upload to Supabase Storage Bucket
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from("product-images") // Must match your bucket name in Supabase
-            .upload(fileName, file.buffer, {
-                contentType: file.mimetype,
-                upsert: false
-            });
+      // 2. Upload to Supabase Storage Bucket
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("product-images") // Must match your bucket name in Supabase
+        .upload(fileName, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false,
+        });
 
-        if (uploadError) throw uploadError;
+      if (uploadError) throw uploadError;
 
-        // 3. Get the Public URL of the uploaded file
-        const { data: urlData } = supabase.storage
-            .from("product-images")
-            .getPublicUrl(fileName);
+      // 3. Get the Public URL of the uploaded file
+      const { data: urlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(fileName);
 
-        const publicImageUrl = urlData.publicUrl;
+      const publicImageUrl = urlData.publicUrl;
 
-        // 4. Insert into 'products' table using the Public URL
-        const weight = `${weightValue} ${unit}`;
-        const { error: dbError } = await supabase
-            .from("products")
-            .insert([{ 
-                name, 
-                weight, 
-                price: parseFloat(price), 
-                image: publicImageUrl // This is the full https:// link
-            }]);
+      // 4. Insert into 'products' table using the Public URL
+      const weight = `${weightValue} ${unit}`;
+      const { error: dbError } = await supabase.from("products").insert([
+        {
+          name,
+          weight,
+          price: parseFloat(price),
+          image: publicImageUrl, // This is the full https:// link
+        },
+      ]);
 
-        if (dbError) throw dbError;
+      if (dbError) throw dbError;
 
-        res.redirect("/");
+      res.redirect("/");
     } catch (err) {
-        console.error("Upload Error:", err.message);
-        res.status(500).send("Failed to add product: " + err.message);
+      console.error("Upload Error:", err.message);
+      res.status(500).send("Failed to add product: " + err.message);
     }
-});
+  },
+);
 
 app.get("/cart", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
@@ -295,93 +308,272 @@ app.post("/cart/update", async (req, res) => {
 });
 
 app.get("/profile", async (req, res) => {
-    if (!req.session.user) return res.redirect("/login");
+  if (!req.session.user) return res.redirect("/login");
 
-    const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", req.session.user.id)
-        .single();
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", req.session.user.id)
+    .single();
 
-    if (error) {
-        console.error("Error fetching profile:", error.message);
-        return res.status(500).send("Could not load profile.");
-    }
+  if (error) {
+    console.error("Error fetching profile:", error.message);
+    return res.status(500).send("Could not load profile.");
+  }
 
-    res.render("profile", { profile });
+  res.render("profile", { profile });
 });
 
 // POST Update Profile
 app.post("/profile/update", async (req, res) => {
-    if (!req.session.user) return res.status(401).send("Unauthorized");
+  if (!req.session.user) return res.status(401).send("Unauthorized");
 
-    const { name, mobile } = req.body;
+  const { name, mobile } = req.body;
 
-    const { error } = await supabase
-        .from("profiles")
-        .update({ name, mobile })
-        .eq("id", req.session.user.id);
+  const { error } = await supabase
+    .from("profiles")
+    .update({ name, mobile })
+    .eq("id", req.session.user.id);
 
-    if (error) {
-        return res.status(500).send("Update failed: " + error.message);
-    }
+  if (error) {
+    return res.status(500).send("Update failed: " + error.message);
+  }
 
-    // Update the session name so the header reflects the change immediately
-    req.session.user.name = name;
+  // Update the session name so the header reflects the change immediately
+  req.session.user.name = name;
 
-    res.redirect("/profile");
+  res.redirect("/profile");
 });
 
 app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const { imageUrl } = req.body;
+  try {
+    const productId = req.params.id;
+    const { imageUrl } = req.body;
 
-        // 1. Delete from Database
-        const { error: dbError } = await supabase
-            .from("products")
-            .delete()
-            .eq("id", productId);
+    // 1. Delete from Database
+    const { error: dbError } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", productId);
 
-        if (dbError) throw dbError;
+    if (dbError) throw dbError;
 
-        // 2. Delete from Storage (if it's a Supabase URL)
-        if (imageUrl && imageUrl.includes("supabase.co")) {
-            // Extract the filename from the URL
-            const fileName = imageUrl.split('/').pop();
-            
-            await supabase.storage
-                .from("product-images")
-                .remove([fileName]);
-        }
+    // 2. Delete from Storage (if it's a Supabase URL)
+    if (imageUrl && imageUrl.includes("supabase.co")) {
+      // Extract the filename from the URL
+      const fileName = imageUrl.split("/").pop();
 
-        res.status(200).json({ message: "Product deleted successfully" });
-    } catch (err) {
-        console.error("Delete Error:", err.message);
-        res.status(500).json({ error: err.message });
+      await supabase.storage.from("product-images").remove([fileName]);
     }
+
+    res.status(200).json({ message: "Product deleted successfully" });
+  } catch (err) {
+    console.error("Delete Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get("/checkout", (req, res) => {
-    // You would typically pass your cart items here
-    res.render("checkout");
+app.get("/checkout", async (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
+
+  const { data: cartItems } = await supabase
+    .from("carts")
+    .select(`quantity, products (*)`)
+    .eq("user_id", req.session.user.id);
+
+  const formattedItems =
+    cartItems?.map((item) => ({
+      quantity: item.quantity,
+      productId: item.products,
+    })) || [];
+
+  const { data: addresses } = await supabase
+    .from("addresses")
+    .select("*")
+    .eq("user_id", req.session.user.id)
+    .order("created_at", { ascending: false });
+
+  res.render("checkout", {
+    cart: { items: formattedItems },
+    addresses: addresses || [],
+  });
+});
+
+app.post("/checkout", async (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
+
+  const userId = req.session.user.id;
+  const {
+    first_name,
+    last_name,
+    address,
+    city,
+    pin_code,
+    selected_address,
+    email,
+    phone,
+  } = req.body;
+
+  try {
+    // 1. Resolve address
+    let addressId = selected_address;
+    let addressDetails;
+
+    if (!selected_address && first_name) {
+      const { data: newAddr } = await supabase
+        .from("addresses")
+        .insert([
+          {
+            user_id: userId,
+            first_name,
+            last_name,
+            phone,
+            address,
+            city,
+            pin_code,
+          },
+        ])
+        .select()
+        .single();
+      addressId = newAddr.id;
+      addressDetails = newAddr;
+    } else {
+      const { data, error } = await supabase
+        .from("addresses")
+        .select("*")
+        .eq("id", selected_address)
+        .single();
+
+      if (error || !data) {
+        console.error("Address fetch error:", error);
+        return res
+          .status(400)
+          .send("Could not find selected address. Please try again.");
+      }
+
+      addressDetails = data;
+      addressId = data.id;
+    }
+
+    // 2. Fetch cart items
+    const { data: cartItems } = await supabase
+      .from("carts")
+      .select("quantity, products (*)")
+      .eq("user_id", userId);
+
+    const total = cartItems.reduce(
+      (acc, item) => acc + item.products.price * item.quantity,
+      0,
+    );
+
+    // 3. Create order
+    const { data: order } = await supabase
+      .from("orders")
+      .insert([
+        {
+          user_id: userId,
+          address_id: addressId,
+          email,
+          phone,
+          total,
+          status: "pending",
+        },
+      ])
+      .select()
+      .single();
+
+    // 4. Save order items
+    const orderItems = cartItems.map((item) => ({
+      order_id: order.id,
+      product_id: item.products.id,
+      product_name: item.products.name,
+      product_image: item.products.image,
+      quantity: item.quantity,
+      price: item.products.price,
+    }));
+
+    await supabase.from("order_items").insert(orderItems);
+
+    // 5. Clear cart
+    await supabase.from("carts").delete().eq("user_id", userId);
+
+    // 6. Send email to admin
+    const itemRows = cartItems
+      .map(
+        (item) =>
+          `<tr>
+                <td style="padding:8px;border-bottom:1px solid #eee;">${item.products.name}</td>
+                <td style="padding:8px;border-bottom:1px solid #eee;">${item.quantity}</td>
+                <td style="padding:8px;border-bottom:1px solid #eee;">Rs. ${item.products.price * item.quantity}</td>
+            </tr>`,
+      )
+      .join("");
+
+    await transporter.sendMail({
+      from: "prajjwalj02@gmail.com",
+      to: "sahilcing@gmail.com", // admin email
+      subject: `🛒 New Order from ${addressDetails.first_name} ${addressDetails.last_name}`,
+      html: `
+                <div style="font-family:sans-serif;max-width:600px;margin:auto;">
+                    <h2 style="color:#16a34a;">New Order Received!</h2>
+                    <p><strong>Order ID:</strong> ${order.id}</p>
+                    <p><strong>Customer:</strong> ${addressDetails.first_name} ${addressDetails.last_name}</p>
+                    <p><strong>Phone:</strong> ${addressDetails.phone}</p>
+                    <p><strong>Email:</strong> ${email}</p>
+                    <p><strong>Address:</strong> ${addressDetails.address}, ${addressDetails.city} - ${addressDetails.pin_code}</p>
+                    <p><strong>Payment:</strong> Cash On Delivery</p>
+
+                    <h3 style="margin-top:24px;">Items Ordered</h3>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="background:#f4f4f4;">
+                                <th style="padding:8px;text-align:left;">Product</th>
+                                <th style="padding:8px;text-align:left;">Qty</th>
+                                <th style="padding:8px;text-align:left;">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>${itemRows}</tbody>
+                    </table>
+
+                    <h3 style="margin-top:16px;color:#16a34a;">Total: Rs. ${total}</h3>
+                </div>
+            `,
+    });
+
+    // 7. Redirect to success page
+    res.redirect(`/order-success?id=${order.id}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Something went wrong. Please try again.");
+  }
+});
+
+app.get("/order-success", async (req, res) => {
+  const { id } = req.query;
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("*, addresses(*), order_items(*)")
+    .eq("id", id)
+    .single();
+
+  res.render("order-success", { order });
 });
 
 app.get("/privacy", (req, res) => {
-    res.render("privacy");
+  res.render("privacy");
 });
 
 app.get("/returns", (req, res) => {
-    res.render("refund");
+  res.render("refund");
 });
 
-app.get("/terms", (req, res) =>{
-    res.render("terms")
-}); 
+app.get("/terms", (req, res) => {
+  res.render("terms");
+});
 
-  
-app.get("/delivery", (req, res) =>{
-  res.render("delivery")
+app.get("/delivery", (req, res) => {
+  res.render("delivery");
 });
 
 app.listen(3000);

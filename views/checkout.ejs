@@ -1,47 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secure Checkout | GardenRich</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
+
 <body class="bg-zinc-50 font-sans antialiased text-zinc-900">
     <%- include("partials/header") %>
 
-    <div class="max-w-7xl mx-auto py-12 px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto py-12 px-6 lg:px-8 pb-24">
         <div class="flex flex-col lg:flex-row gap-12">
-            
-            <div class="flex-1 space-y-8">
+
+            <form id="checkoutForm" action="/checkout" method="POST" class="flex-1 space-y-8">
+
+                <!-- Step 1: Contact Information -->
                 <div class="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100">
                     <div class="flex items-center mb-6">
                         <span class="w-8 h-8 bg-zinc-900 text-white rounded-full flex items-center justify-center font-bold mr-3 text-sm">1</span>
                         <h2 class="text-xl font-bold">Contact Information</h2>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="email" placeholder="Email Address" class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
-                        <input type="tel" placeholder="Phone Number" class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
+                        <input type="email" name="email" placeholder="Email Address"
+                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
+                        <input type="tel" name="phone" placeholder="Phone Number"
+                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
                     </div>
                 </div>
 
+                <!-- Step 2: Shipping Address -->
                 <div class="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100">
-                    <div class="flex items-center mb-6">
-                        <span class="w-8 h-8 bg-zinc-900 text-white rounded-full flex items-center justify-center font-bold mr-3 text-sm">2</span>
-                        <h2 class="text-xl font-bold">Shipping Address</h2>
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center">
+                            <span class="w-8 h-8 bg-zinc-900 text-white rounded-full flex items-center justify-center font-bold mr-3 text-sm">2</span>
+                            <h2 class="text-xl font-bold">Shipping Address</h2>
+                        </div>
+                        <% if (addresses.length > 0) { %>
+                        <button type="button" onclick="showNewAddressForm()" id="addNewBtn"
+                            class="text-sm font-bold text-green-600 hover:text-green-700 underline underline-offset-2">
+                            + Add New Address
+                        </button>
+                        <% } %>
                     </div>
-                    <div class="space-y-4">
+
+                    <!-- Saved Addresses -->
+                    <% if (addresses.length > 0) { %>
+                    <div id="savedAddresses" class="space-y-3 mb-4">
+                        <% addresses.forEach((addr, index) => { %>
+                        <label class="flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all <%= index === 0 ? 'border-green-600 bg-green-50' : 'border-zinc-200 bg-white' %>"
+                            onclick="selectAddress(this)">
+                            <input type="radio" name="selected_address" value="<%= addr.id %>"
+                                <%= index === 0 ? 'checked' : '' %>
+                                class="mt-1 w-4 h-4 accent-green-600">
+                            <div class="text-sm">
+                                <p class="font-bold text-zinc-800"><%= addr.first_name %> <%= addr.last_name %></p>
+                                <p class="text-zinc-500"><%= addr.address %></p>
+                                <p class="text-zinc-500"><%= addr.city %> — <%= addr.pin_code %></p>
+                                <p class="text-zinc-500"><%= addr.phone %></p>
+                            </div>
+                        </label>
+                        <% }) %>
+                    </div>
+                    <% } %>
+
+                    <!-- New Address Form -->
+                    <div id="newAddressForm" class="space-y-4 <%= addresses.length > 0 ? 'hidden' : '' %>">
                         <div class="grid grid-cols-2 gap-4">
-                            <input type="text" placeholder="First Name" class="p-4 rounded-xl border border-zinc-200 outline-none">
-                            <input type="text" placeholder="Last Name" class="p-4 rounded-xl border border-zinc-200 outline-none">
+                            <input type="text" name="first_name" placeholder="First Name"
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                            <input type="text" name="last_name" placeholder="Last Name"
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
                         </div>
-                        <input type="text" placeholder="Address (House No, Building, Street)" class="w-full p-4 rounded-xl border border-zinc-200 outline-none">
+                        <input type="text" name="address" placeholder="Address (House No, Building, Street)"
+                            class="w-full p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
                         <div class="grid grid-cols-2 gap-4">
-                            <input type="text" placeholder="City" class="p-4 rounded-xl border border-zinc-200 outline-none">
-                            <input type="text" placeholder="PIN Code" class="p-4 rounded-xl border border-zinc-200 outline-none">
+                            <input type="text" name="city" placeholder="City"
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                            <input type="text" name="pin_code" placeholder="PIN Code"
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
                         </div>
+                        <% if (addresses.length > 0) { %>
+                        <button type="button" onclick="cancelNewAddress()"
+                            class="text-sm font-bold text-zinc-400 hover:text-zinc-600">
+                            Cancel
+                        </button>
+                        <% } %>
                     </div>
                 </div>
 
+                <!-- Step 3: Payment Method -->
                 <div class="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100">
                     <div class="flex items-center mb-6">
                         <span class="w-8 h-8 bg-zinc-900 text-white rounded-full flex items-center justify-center font-bold mr-3 text-sm">3</span>
@@ -53,38 +102,44 @@
                             <span class="ml-3 font-bold text-zinc-700">Online Payment (Coming Soon)</span>
                         </label>
                         <label class="flex items-center p-4 rounded-xl border-2 border-green-600 bg-green-50 cursor-pointer">
-                            <input type="radio" name="payment" checked class="w-4 h-4 accent-green-600">
+                            <input type="radio" name="payment" value="cod" checked class="w-4 h-4 accent-green-600">
                             <span class="ml-3 font-bold text-green-900">Cash On Delivery (COD)</span>
                         </label>
                     </div>
                 </div>
 
-                <button class="w-full py-5 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest">
+                <button type="button" onclick="document.getElementById('checkoutForm').submit()"
+                    class="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest">
                     Place Order Now
                 </button>
-            </div>
 
+            </form>
+
+            <!-- Order Review -->
             <div class="lg:w-96">
                 <div class="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100 sticky top-24">
                     <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-6">Order Review</h2>
-                    
+
                     <div class="space-y-4 mb-8">
+                        <% cart.items.forEach(item => { %>
                         <div class="flex gap-4">
                             <div class="w-16 h-16 bg-zinc-100 rounded-lg overflow-hidden shrink-0">
-                                <img src="/images/atta.webp" class="w-full h-full object-cover">
+                                <img src="<%= item.productId.image %>" class="w-full h-full object-cover">
                             </div>
                             <div class="flex-1">
-                                <h4 class="text-sm font-bold text-zinc-800 leading-tight">Pure Organic Atta</h4>
-                                <p class="text-[10px] text-zinc-400 font-bold">Qty: 1</p>
+                                <h4 class="text-sm font-bold text-zinc-800 leading-tight"><%= item.productId.name %></h4>
+                                <p class="text-[10px] text-zinc-400 font-bold"><%= item.productId.weight %></p>
+                                <p class="text-[10px] text-zinc-400 font-bold">Qty: <%= item.quantity %></p>
                             </div>
-                            <span class="text-sm font-black">Rs. 160</span>
+                            <span class="text-sm font-black">Rs. <%= item.productId.price * item.quantity %></span>
                         </div>
+                        <% }) %>
                     </div>
 
                     <div class="border-t border-zinc-50 pt-4 space-y-2">
                         <div class="flex justify-between text-sm text-zinc-500 font-medium">
                             <span>Subtotal</span>
-                            <span>Rs. 160.00</span>
+                            <span>Rs. <%= cart.items.reduce((acc, item) => acc + (item.productId.price * item.quantity), 0).toFixed(2) %></span>
                         </div>
                         <div class="flex justify-between text-sm text-red-500 font-medium">
                             <span>Discount</span>
@@ -92,7 +147,7 @@
                         </div>
                         <div class="flex justify-between pt-4 border-t border-zinc-100">
                             <span class="font-bold">To Pay</span>
-                            <span class="text-xl font-black text-green-700">Rs. 160.00</span>
+                            <span class="text-xl font-black text-green-700">Rs. <%= cart.items.reduce((acc, item) => acc + (item.productId.price * item.quantity), 0).toFixed(2) %></span>
                         </div>
                     </div>
                 </div>
@@ -102,5 +157,30 @@
     </div>
 
     <%- include("partials/footer") %>
+
+    <script>
+        function selectAddress(label) {
+            document.querySelectorAll('[name="selected_address"]').forEach(r => {
+                r.closest('label').classList.remove('border-green-600', 'bg-green-50');
+                r.closest('label').classList.add('border-zinc-200', 'bg-white');
+            });
+            label.classList.add('border-green-600', 'bg-green-50');
+            label.classList.remove('border-zinc-200', 'bg-white');
+        }
+
+        function showNewAddressForm() {
+            document.getElementById('newAddressForm').classList.remove('hidden');
+            document.getElementById('savedAddresses').classList.add('hidden');
+            document.getElementById('addNewBtn').classList.add('hidden');
+        }
+
+        function cancelNewAddress() {
+            document.getElementById('newAddressForm').classList.add('hidden');
+            document.getElementById('savedAddresses').classList.remove('hidden');
+            document.getElementById('addNewBtn').classList.remove('hidden');
+        }
+    </script>
+
 </body>
+
 </html>
