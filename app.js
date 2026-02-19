@@ -511,7 +511,7 @@ app.post("/checkout", async (req, res) => {
 
     await transporter.sendMail({
       from: "prajjwalj02@gmail.com",
-      to: "sahilcing@gmail.com", // admin email
+      to: "sahilcingh@gmail.com", // admin email
       subject: `🛒 New Order from ${addressDetails.first_name} ${addressDetails.last_name}`,
       html: `
                 <div style="font-family:sans-serif;max-width:600px;margin:auto;">
