@@ -57,31 +57,39 @@ app.use(async (req, res, next) => {
 });
 
 app.get("/", async (req, res) => {
-  try {
-    const searchQuery = req.query.search;
+    try {
+        const searchQuery = req.query.search;
+        let queryBuilder = supabase.from("products").select("*");
+        if (searchQuery) {
+            queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+        }
+        const { data: products, error } = await queryBuilder;
+        if (error) throw error;
 
-    // Start building the query
-    let queryBuilder = supabase.from("products").select("*");
+        // Fetch user's cart items
+        let cartMap = {};
+        if (req.session.user) {
+            const { data: cartItems } = await supabase
+                .from("carts")
+                .select("product_id, quantity")
+                .eq("user_id", req.session.user.id);
 
-    // If a search term exists, filter the results
-    if (searchQuery) {
-      // .ilike('column', '%value%') handles case-insensitive search
-      queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+            if (cartItems) {
+                cartItems.forEach(item => {
+                    cartMap[item.product_id] = item.quantity;
+                });
+            }
+        }
+
+        res.render("index", {
+            products,
+            query: searchQuery || "",
+            cartMap,
+        });
+    } catch (err) {
+        console.error("Search Error:", err.message);
+        res.status(500).send("Error fetching products");
     }
-
-    const { data: products, error } = await queryBuilder;
-
-    if (error) throw error;
-
-    res.render("index", {
-      products,
-      query: searchQuery || "",
-      // assuming you pass user for the header
-    });
-  } catch (err) {
-    console.error("Search Error:", err.message);
-    res.status(500).send("Error fetching products");
-  }
 });
 
 app.get("/login", (req, res) => {
@@ -226,6 +234,49 @@ app.post(
   },
 );
 
+app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (req, res) => {
+    try {
+        const productId = parseInt(req.params.id);  // ← just parseInt, nothing else
+
+        let updateData = {
+            name: req.body.name,
+            price: parseFloat(req.body.price),
+            weight: req.body.weight,
+        };
+
+        if (req.file) {
+            const fileName = `${Date.now()}-${req.file.originalname}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from("product-images")
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false,
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabase.storage
+                .from("product-images")
+                .getPublicUrl(fileName);
+
+            updateData.image = urlData.publicUrl;
+        }
+
+        const { data, error } = await supabase
+            .from("products")
+            .update(updateData)
+            .eq("id", productId)  // ← now matches int8
+            .select();
+
+        if (error) throw error;
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get("/cart", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
 
@@ -258,16 +309,42 @@ app.get("/cart", async (req, res) => {
 });
 
 app.post("/cart/add", async (req, res) => {
-  const user = req.session.user;
-  if (!user) return res.redirect("/login");
+    const user = req.session.user;
+    if (!user) return res.status(401).json({ error: "Not logged in" });
 
-  const { productId } = req.body;
+    const productId = req.body.productId;
+    if (!productId) return res.status(400).json({ error: "No productId" });
 
-  const { data, error } = await supabase
-    .from("carts")
-    .insert([{ user_id: user.id, product_id: productId, quantity: 1 }]);
+    const { data: existing } = await supabase
+        .from("carts")
+        .select("quantity")
+        .eq("user_id", user.id)
+        .eq("product_id", productId)
+        .single();
 
-  res.redirect("/cart");
+    if (existing) {
+        await supabase
+            .from("carts")
+            .update({ quantity: existing.quantity + 1 })
+            .eq("user_id", user.id)
+            .eq("product_id", productId);
+    } else {
+        await supabase
+            .from("carts")
+            .insert([{ user_id: user.id, product_id: productId, quantity: 1 }]);
+    }
+
+    // Return updated total just like /cart/update does
+    const { data: cartData } = await supabase
+        .from("carts")
+        .select("quantity")
+        .eq("user_id", user.id);
+
+    const totalItems = cartData
+        ? cartData.reduce((acc, item) => acc + item.quantity, 0)
+        : 0;
+
+    res.json({ success: true, totalItems });
 });
 
 app.post("/cart/update", async (req, res) => {
@@ -512,6 +589,7 @@ app.post("/checkout", async (req, res) => {
     await transporter.sendMail({
       from: "prajjwalj02@gmail.com",
       to: "sahilcingh@gmail.com", // admin email
+      cc: "prajjwalj02@gmail.com",
       subject: `🛒 New Order from ${addressDetails.first_name} ${addressDetails.last_name}`,
       html: `
                 <div style="font-family:sans-serif;max-width:600px;margin:auto;">
@@ -539,6 +617,39 @@ app.post("/checkout", async (req, res) => {
                 </div>
             `,
     });
+
+    await transporter.sendMail({
+    from: "prajwalj02@gmail.com",
+    to: email,                            // customer's email from the form
+    subject: `✅ Your GardenRich Order is Confirmed!`,
+    html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:auto;">
+            <h2 style="color:#16a34a;">Thank you for your order, ${addressDetails.first_name}!</h2>
+            <p>We've received your order and will process it shortly.</p>
+
+            <h3 style="margin-top:24px;">Order Summary</h3>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f4f4f4;">
+                        <th style="padding:8px;text-align:left;">Product</th>
+                        <th style="padding:8px;text-align:left;">Qty</th>
+                        <th style="padding:8px;text-align:left;">Price</th>
+                    </tr>
+                </thead>
+                <tbody>${itemRows}</tbody>
+            </table>
+            <h3 style="color:#16a34a;">Total: Rs. ${total}</h3>
+
+            <h3 style="margin-top:24px;">Delivering To</h3>
+            <p>${addressDetails.address}, ${addressDetails.city} - ${addressDetails.pin_code}</p>
+            <p><strong>Payment:</strong> Cash On Delivery</p>
+
+            <p style="margin-top:24px;color:#888;">
+                Questions? Reply to this email or call us at +91 9140104326
+            </p>
+        </div>
+    `,
+});
 
     // 7. Redirect to success page
     res.redirect(`/order-success?id=${order.id}`);
