@@ -59,14 +59,22 @@ app.use(async (req, res, next) => {
 app.get("/", async (req, res) => {
     try {
         const searchQuery = req.query.search;
-        let queryBuilder = supabase.from("products").select("*");
-        if (searchQuery) {
-            queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+        const activeCategory = req.query.category || "all";
+
+        const { data: categories } = await supabase.from("categories").select("*");
+
+        let queryBuilder = supabase
+            .from("products")
+            .select("*, product_variants(*)");
+
+        if (searchQuery) queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+        if (activeCategory && activeCategory !== "all") {
+            queryBuilder = queryBuilder.eq("category", activeCategory);
         }
+
         const { data: products, error } = await queryBuilder;
         if (error) throw error;
 
-        // Fetch user's cart items
         let cartMap = {};
         if (req.session.user) {
             const { data: cartItems } = await supabase
@@ -82,12 +90,14 @@ app.get("/", async (req, res) => {
         }
 
         res.render("index", {
-            products,
+            products: products || [],
             query: searchQuery || "",
             cartMap,
+            categories: categories || [],
+            activeCategory,
         });
     } catch (err) {
-        console.error("Search Error:", err.message);
+        console.error("Error:", err.message);
         res.status(500).send("Error fetching products");
     }
 });
@@ -178,70 +188,110 @@ app.get("/logout", (req, res) => {
   res.redirect("/login");
 });
 
-app.get("/admin", isAdmin, (req, res) => {
-  res.render("admin");
+app.get("/admin", isAdmin, async (req, res) => {
+    const { data: categories } = await supabase.from("categories").select("*");
+    res.render("admin", { categories: categories || [] });
 });
 
-app.post(
-  "/admin/add-product",
-  isAdmin,
-  upload.single("imageFile"),
-  async (req, res) => {
+app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
     try {
-      const { name, weightValue, unit, price } = req.body;
-      const file = req.file;
+        const { name, brand, description, category, is_featured } = req.body;
+        const file = req.file;
 
-      if (!file) return res.status(400).send("Please upload an image.");
+        if (!file) return res.status(400).send("Please upload an image.");
 
-      // 1. Create a unique filename
-      const fileName = `${Date.now()}-${file.originalname}`;
+        // Upload image
+        const fileName = `${Date.now()}-${file.originalname}`;
+        const { error: uploadError } = await supabase.storage
+            .from("product-images")
+            .upload(fileName, file.buffer, {
+                contentType: file.mimetype,
+                upsert: false,
+            });
 
-      // 2. Upload to Supabase Storage Bucket
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("product-images") // Must match your bucket name in Supabase
-        .upload(fileName, file.buffer, {
-          contentType: file.mimetype,
-          upsert: false,
-        });
+        if (uploadError) throw uploadError;
 
-      if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage
+            .from("product-images")
+            .getPublicUrl(fileName);
 
-      // 3. Get the Public URL of the uploaded file
-      const { data: urlData } = supabase.storage
-        .from("product-images")
-        .getPublicUrl(fileName);
+        const publicImageUrl = urlData.publicUrl;
 
-      const publicImageUrl = urlData.publicUrl;
+        // Insert product first
+        const { data: product, error: productError } = await supabase
+            .from("products")
+            .insert([{
+                name,
+                brand: brand || null,
+                description: description || null,
+                category: category || "all",
+                is_featured: is_featured === "true",
+                image: publicImageUrl,
+            }])
+            .select()
+            .single();
 
-      // 4. Insert into 'products' table using the Public URL
-      const weight = `${weightValue} ${unit}`;
-      const { error: dbError } = await supabase.from("products").insert([
-        {
-          name,
-          weight,
-          price: parseFloat(price),
-          image: publicImageUrl, // This is the full https:// link
-        },
-      ]);
+        if (productError) throw productError;
 
-      if (dbError) throw dbError;
+        // Parse variants
+        const rawWeights = req.body["weightValue[]"] || req.body.weightValue;
+        const rawUnits = req.body["unit[]"] || req.body.unit;
+        const rawPrices = req.body["price[]"] || req.body.price;
+        const rawMrps = req.body["mrp[]"] || req.body.mrp;
+        const rawStocks = req.body["stock[]"] || req.body.stock;
 
-      res.redirect("/");
+        const weightValues = Array.isArray(rawWeights) ? rawWeights : [rawWeights];
+        const units = Array.isArray(rawUnits) ? rawUnits : [rawUnits];
+        const prices = Array.isArray(rawPrices) ? rawPrices : [rawPrices];
+        const mrps = Array.isArray(rawMrps) ? rawMrps : [rawMrps];
+        const stocks = Array.isArray(rawStocks) ? rawStocks : [rawStocks];
+
+        const validVariants = weightValues
+            .map((val, i) => ({
+                weight: val,
+                unit: units[i],
+                price: prices[i],
+                mrp: mrps[i],
+                stock: stocks[i],
+            }))
+            .filter(v => v.weight && v.unit && v.price);
+
+        if (validVariants.length === 0) {
+            return res.status(400).send("Please add at least one valid variant.");
+        }
+
+        // Insert variants
+        const variantInserts = validVariants.map(v => ({
+            product_id: product.id,
+            weight: `${v.weight} ${v.unit}`,
+            price: parseFloat(v.price),
+            mrp: v.mrp ? parseFloat(v.mrp) : null,
+            stock: v.stock ? parseInt(v.stock) : 0,
+        }));
+
+        const { error: variantError } = await supabase
+            .from("product_variants")
+            .insert(variantInserts);
+
+        if (variantError) throw variantError;
+
+        res.redirect("/");
     } catch (err) {
-      console.error("Upload Error:", err.message);
-      res.status(500).send("Failed to add product: " + err.message);
+        console.error("Upload Error:", err.message);
+        res.status(500).send("Failed to add product: " + err.message);
     }
-  },
-);
+});
 
 app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (req, res) => {
     try {
-        const productId = parseInt(req.params.id);  // ← just parseInt, nothing else
+        const productId = parseInt(req.params.id);
+        const { name, price, weight, category } = req.body;
 
         let updateData = {
-            name: req.body.name,
-            price: parseFloat(req.body.price),
-            weight: req.body.weight,
+            name,
+            price: parseFloat(price),
+            weight,
+            category,
         };
 
         if (req.file) {
@@ -266,122 +316,216 @@ app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (
         const { data, error } = await supabase
             .from("products")
             .update(updateData)
-            .eq("id", productId)  // ← now matches int8
+            .eq("id", productId)
             .select();
 
         if (error) throw error;
 
         res.json({ success: true });
     } catch (err) {
+        console.error("Edit Error:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
+app.get("/admin/orders", isAdmin, async (req, res) => {
+    const { data: orders } = await supabase
+        .from("orders")
+        .select("*, addresses(*), order_items(*)")
+        .order("created_at", { ascending: false });
+
+    const today = new Date().toISOString().split("T")[0];
+    const thisMonth = new Date().toISOString().slice(0, 7);
+
+    const todayOrders = orders?.filter(o => o.created_at.startsWith(today)) || [];
+
+    const thisMonthOrders = orders?.filter(o => o.created_at.startsWith(thisMonth)).length || 0;
+    const thisMonthRevenue = orders?.filter(o => o.created_at.startsWith(thisMonth))
+        .reduce((acc, o) => acc + o.total, 0) || 0;
+
+    const monthlyStats = {};
+    orders?.forEach(order => {
+        const month = order.created_at.slice(0, 7);
+        if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
+        monthlyStats[month].count += 1;
+        monthlyStats[month].total += order.total;
+    });
+
+    res.render("admin-orders", {
+        orders: orders || [],
+        todayOrders,
+        thisMonthOrders,
+        thisMonthRevenue,
+        monthlyStats,
+    });
+});
+
+// Update order status
+app.post("/admin/orders/update-status", isAdmin, async (req, res) => {
+    const { orderId, status } = req.body;
+
+    const { error } = await supabase
+        .from("orders")
+        .update({ status })
+        .eq("id", orderId);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.get("/my-orders", async (req, res) => {
+    if (!req.session.user) return res.redirect("/login");
+
+    const { data: orders } = await supabase
+        .from("orders")
+        .select("*, addresses(*), order_items(*)")
+        .eq("user_id", req.session.user.id)
+        .order("created_at", { ascending: false });
+
+    res.render("my-orders", { orders: orders || [] });
+});
+
+app.get("/my-orders/:id", async (req, res) => {
+    if (!req.session.user) return res.redirect("/login");
+
+    const { data: order } = await supabase
+        .from("orders")
+        .select("*, addresses(*), order_items(*)")
+        .eq("id", req.params.id)
+        .eq("user_id", req.session.user.id)  // security: only own orders
+        .single();
+
+    if (!order) return res.status(404).send("Order not found.");
+
+    res.render("order-detail", { order });
+});
+
 app.get("/cart", async (req, res) => {
-  if (!req.session.user) return res.redirect("/login");
+    if (!req.session.user) return res.redirect("/login");
 
-  const { data: cartItems } = await supabase
-    .from("carts")
-    .select(
-      `
-            quantity,
-            products (*)
-        `,
-    )
-    .eq("user_id", req.session.user.id);
+    const { data: cartItems } = await supabase
+        .from("carts")
+        .select("*, products(id, name, image, brand, product_variants(id, price, weight, mrp))")
+        .eq("user_id", req.session.user.id);
 
-  const formattedItems =
-    cartItems?.map((item) => ({
-      quantity: item.quantity,
-      productId: item.products,
-    })) || [];
+    // Attach price from first variant to each cart item
+    const enrichedCart = (cartItems || []).map(item => {
+        const product = item.products;
+        const firstVariant = product?.product_variants?.[0] || {};
+        return {
+            ...item,
+            price: firstVariant.price || 0,
+            weight: firstVariant.weight || "",
+            mrp: firstVariant.mrp || null,
+            stock: firstVariant.stock || 99,
+            product_name: product?.name || "",
+            product_image: product?.image || "",
+            product_brand: product?.brand || "",
+        };
+    });
 
-  // ✅ Calculate total items
-  const totalItems = formattedItems.reduce(
-    (sum, item) => sum + item.quantity,
-    0,
-  );
+    const total = enrichedCart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const cartCount = enrichedCart.reduce((acc, item) => acc + item.quantity, 0);
 
-  res.render("cart", {
-    cart: { items: formattedItems },
-    totalItems,
-  });
+    res.render("cart", {
+        cartItems: enrichedCart,
+        total,
+        cartCount,
+    });
 });
 
 app.post("/cart/add", async (req, res) => {
-    const user = req.session.user;
-    if (!user) return res.status(401).json({ error: "Not logged in" });
+    if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-    const productId = req.body.productId;
-    if (!productId) return res.status(400).json({ error: "No productId" });
+    const { productId } = req.body;
+
+    // Get stock from first variant
+    const { data: variants } = await supabase
+        .from("product_variants")
+        .select("stock, price")
+        .eq("product_id", productId)
+        .order("id", { ascending: true })
+        .limit(1);
+
+    const stock = variants?.[0]?.stock || 99;
 
     const { data: existing } = await supabase
         .from("carts")
-        .select("quantity")
-        .eq("user_id", user.id)
+        .select("*")
+        .eq("user_id", req.session.user.id)
         .eq("product_id", productId)
         .single();
 
     if (existing) {
+        const newQty = Math.min(existing.quantity + 1, stock);
         await supabase
             .from("carts")
-            .update({ quantity: existing.quantity + 1 })
-            .eq("user_id", user.id)
-            .eq("product_id", productId);
+            .update({ quantity: newQty })
+            .eq("id", existing.id);
     } else {
         await supabase
             .from("carts")
-            .insert([{ user_id: user.id, product_id: productId, quantity: 1 }]);
+            .insert([{ user_id: req.session.user.id, product_id: productId, quantity: 1 }]);
     }
 
-    // Return updated total just like /cart/update does
-    const { data: cartData } = await supabase
+    const { data: allItems } = await supabase
         .from("carts")
         .select("quantity")
-        .eq("user_id", user.id);
+        .eq("user_id", req.session.user.id);
 
-    const totalItems = cartData
-        ? cartData.reduce((acc, item) => acc + item.quantity, 0)
-        : 0;
-
-    res.json({ success: true, totalItems });
+    const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
+    res.json({ success: true, totalItems, stock });
 });
 
 app.post("/cart/update", async (req, res) => {
-  const user = req.session.user;
-  if (!user) return res.status(401).json({ totalItems: 0 });
+    if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-  const { productId, quantity } = req.body;
+    const { productId, quantity } = req.body;
 
-  if (quantity <= 0) {
-    await supabase
-      .from("carts")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("product_id", productId);
-  } else {
-    // Upsert ensures we don't get duplicate rows for the same product
-    await supabase.from("carts").upsert(
-      {
-        user_id: user.id,
-        product_id: productId,
-        quantity: quantity,
-      },
-      { onConflict: "user_id, product_id" },
-    );
-  }
+    if (quantity <= 0) {
+        await supabase
+            .from("carts")
+            .delete()
+            .eq("user_id", req.session.user.id)
+            .eq("product_id", productId);
+    } else {
+        // Get stock limit
+        const { data: variants } = await supabase
+            .from("product_variants")
+            .select("stock")
+            .eq("product_id", productId)
+            .order("id", { ascending: true })
+            .limit(1);
 
-  // Get the total sum of all items in the cart
-  const { data: cartData } = await supabase
-    .from("carts")
-    .select("quantity")
-    .eq("user_id", user.id);
+        const stock = variants?.[0]?.stock || 99;
+        const safeQty = Math.min(quantity, stock);
 
-  const totalItems = cartData
-    ? cartData.reduce((acc, item) => acc + item.quantity, 0)
-    : 0;
+        const { data: existing } = await supabase
+            .from("carts")
+            .select("id")
+            .eq("user_id", req.session.user.id)
+            .eq("product_id", productId)
+            .single();
 
-  res.json({ totalItems });
+        if (existing) {
+            await supabase
+                .from("carts")
+                .update({ quantity: safeQty })
+                .eq("id", existing.id);
+        } else {
+            await supabase
+                .from("carts")
+                .insert([{ user_id: req.session.user.id, product_id: productId, quantity: safeQty }]);
+        }
+    }
+
+    const { data: allItems } = await supabase
+        .from("carts")
+        .select("quantity")
+        .eq("user_id", req.session.user.id);
+
+    const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
+    res.json({ success: true, totalItems });
 });
 
 app.get("/profile", async (req, res) => {
@@ -451,29 +595,40 @@ app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
 });
 
 app.get("/checkout", async (req, res) => {
-  if (!req.session.user) return res.redirect("/login");
+    if (!req.session.user) return res.redirect("/login");
 
-  const { data: cartItems } = await supabase
-    .from("carts")
-    .select(`quantity, products (*)`)
-    .eq("user_id", req.session.user.id);
+    const { data: addresses } = await supabase
+        .from("addresses")
+        .select("*")
+        .eq("user_id", req.session.user.id)
+        .order("created_at", { ascending: false });
 
-  const formattedItems =
-    cartItems?.map((item) => ({
-      quantity: item.quantity,
-      productId: item.products,
-    })) || [];
+    const { data: cartData } = await supabase
+        .from("carts")
+        .select("*, products(id, name, image, brand, product_variants(id, price, weight, mrp))")
+        .eq("user_id", req.session.user.id);
 
-  const { data: addresses } = await supabase
-    .from("addresses")
-    .select("*")
-    .eq("user_id", req.session.user.id)
-    .order("created_at", { ascending: false });
+    const cartItems = (cartData || []).map(item => {
+        const product = item.products;
+        const firstVariant = product?.product_variants?.[0] || {};
+        return {
+            ...item,
+            price: firstVariant.price || 0,
+            weight: firstVariant.weight || "",
+            mrp: firstVariant.mrp || null,
+            product_name: product?.name || "",
+            product_image: product?.image || "",
+            product_brand: product?.brand || "",
+        };
+    });
 
-  res.render("checkout", {
-    cart: { items: formattedItems },
-    addresses: addresses || [],
-  });
+    const total = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
+    res.render("checkout", {
+        addresses: addresses || [],
+        cartItems,
+        total,
+    });
 });
 
 app.post("/checkout", async (req, res) => {

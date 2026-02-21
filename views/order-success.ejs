@@ -1,51 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order Placed | GardenRich</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
+
 <body class="bg-zinc-50 font-sans antialiased text-zinc-900">
     <%- include("partials/header") %>
 
-    <div class="max-w-xl mx-auto py-24 px-6 text-center">
-        <div class="text-6xl mb-6">🎉</div>
-        <h1 class="text-3xl font-black text-zinc-900 mb-2">Order Placed!</h1>
-        <p class="text-zinc-500 font-medium mb-8">
-            Thank you for your order. We'll deliver it to you soon.
-        </p>
+        <div class="max-w-xl mx-auto py-24 px-6 text-center">
+            <div class="text-6xl mb-6">🎉</div>
+            <h1 class="text-3xl font-black text-zinc-900 mb-2">Order Placed!</h1>
+            <p class="text-zinc-500 font-medium mb-8">
+                Thank you for your order. We'll deliver it to you soon.
+            </p>
 
-        <div class="bg-white rounded-3xl border border-zinc-100 shadow-sm p-6 text-left mb-6">
-            <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Items Ordered</p>
-            <% order.order_items.forEach(item => { %>
-            <div class="flex justify-between text-sm py-2 border-b border-zinc-50 last:border-0">
-                <span class="font-bold text-zinc-700"><%= item.product_name %> <span class="text-zinc-400 font-medium">x<%= item.quantity %></span></span>
-                <span class="font-black">Rs. <%= item.price * item.quantity %></span>
+            <div class="bg-white rounded-3xl border border-zinc-100 shadow-sm p-6 text-left mb-6">
+                <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Items Ordered</p>
+                <% order.order_items.forEach(item=> { %>
+                    <div class="flex justify-between text-sm py-2 border-b border-zinc-50 last:border-0">
+                        <span class="font-bold text-zinc-700">
+                            <%= item.product_name %> <span class="text-zinc-400 font-medium">x<%= item.quantity %>
+                                        </span>
+                        </span>
+                        <span class="font-black">Rs. <%= item.price * item.quantity %></span>
+                    </div>
+                    <% }) %>
+                        <div class="flex justify-between mt-4 text-green-700 font-black text-base">
+                            <span>Total</span>
+                            <span>Rs. <%= order.total %></span>
+                        </div>
             </div>
-            <% }) %>
-            <div class="flex justify-between mt-4 text-green-700 font-black text-base">
-                <span>Total</span>
-                <span>Rs. <%= order.total %></span>
+
+            <div class="bg-white rounded-3xl border border-zinc-100 shadow-sm p-6 text-left mb-8">
+                <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Delivering To</p>
+                <p class="font-bold text-zinc-800">
+                    <%= order.addresses.first_name %>
+                        <%= order.addresses.last_name %>
+                </p>
+                <p class="text-sm text-zinc-500 mt-1">
+                    <%= order.addresses.address %>
+                </p>
+                <p class="text-sm text-zinc-500">
+                    <%= order.addresses.city %> — <%= order.addresses.pin_code %>
+                </p>
+                <p class="text-sm text-zinc-500 mt-1">
+                    <%= order.addresses.phone %>
+                </p>
+                <div
+                    class="mt-4 inline-block bg-green-50 text-green-700 text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full">
+                    Cash On Delivery
+                </div>
             </div>
+            <a href="/my-orders"
+                class="inline-block bg-zinc-900 hover:bg-zinc-800 text-white font-black py-4 px-10 rounded-2xl uppercase tracking-widest transition-all active:scale-95">
+                Track Order
+            </a>
+
+            <a href="/"
+                class="inline-block bg-green-600 hover:bg-green-700 text-white font-black py-4 px-10 rounded-2xl uppercase tracking-widest transition-all active:scale-95">
+                Continue Shopping
+            </a>
         </div>
 
-        <div class="bg-white rounded-3xl border border-zinc-100 shadow-sm p-6 text-left mb-8">
-            <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Delivering To</p>
-            <p class="font-bold text-zinc-800"><%= order.addresses.first_name %> <%= order.addresses.last_name %></p>
-            <p class="text-sm text-zinc-500 mt-1"><%= order.addresses.address %></p>
-            <p class="text-sm text-zinc-500"><%= order.addresses.city %> — <%= order.addresses.pin_code %></p>
-            <p class="text-sm text-zinc-500 mt-1"><%= order.addresses.phone %></p>
-            <div class="mt-4 inline-block bg-green-50 text-green-700 text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full">
-                Cash On Delivery
-            </div>
-        </div>
-
-        <a href="/" class="inline-block bg-green-600 hover:bg-green-700 text-white font-black py-4 px-10 rounded-2xl uppercase tracking-widest transition-all active:scale-95">
-            Continue Shopping
-        </a>
-    </div>
-
-    <%- include("partials/footer") %>
+        <%- include("partials/footer") %>
 </body>
+
 </html>

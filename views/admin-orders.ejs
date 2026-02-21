@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Orders | GardenRich</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-zinc-50 font-sans antialiased text-zinc-900">
+    <%- include("partials/header") %>
+
+    <div class="max-w-7xl mx-auto py-12 px-6 lg:px-8 pb-24">
+
+        <div class="mb-10">
+            <span class="text-green-600 font-bold tracking-widest text-xs uppercase">Admin Panel</span>
+            <h1 class="font-extrabold text-4xl mt-1 tracking-tight text-zinc-900">Orders Dashboard</h1>
+        </div>
+
+        <!-- Key Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+
+            <!-- Today's Orders -->
+            <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center">
+                        <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Today's Orders</p>
+                </div>
+                <p class="text-4xl font-black text-zinc-900"><%= todayOrders.length %></p>
+                <p class="text-sm font-bold text-zinc-400 mt-1">Orders placed today</p>
+            </div>
+
+            <!-- Today's Revenue -->
+            <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Today's Revenue</p>
+                </div>
+                <p class="text-4xl font-black text-green-700">
+                    Rs. <%= todayOrders.reduce((acc, o) => acc + o.total, 0).toFixed(0) %>
+                </p>
+                <p class="text-sm font-bold text-zinc-400 mt-1">Collected today</p>
+            </div>
+
+            <!-- This Month's Orders -->
+            <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                    </div>
+                    <p class="text-xs font-black uppercase tracking-widest text-zinc-400">This Month</p>
+                </div>
+                <p class="text-4xl font-black text-zinc-900"><%= thisMonthOrders %></p>
+                <p class="text-sm font-bold text-zinc-400 mt-1">Orders this month</p>
+            </div>
+
+            <!-- This Month's Revenue -->
+            <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                        </svg>
+                    </div>
+                    <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Month Revenue</p>
+                </div>
+                <p class="text-4xl font-black text-purple-700">
+                    Rs. <%= thisMonthRevenue.toFixed(0) %>
+                </p>
+                <p class="text-sm font-bold text-zinc-400 mt-1">Revenue this month</p>
+            </div>
+
+        </div>
+
+        <!-- Monthly Breakdown -->
+        <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6 mb-10">
+            <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Month-wise Breakdown</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-zinc-100">
+                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Month</th>
+                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Orders</th>
+                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Revenue</th>
+                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Avg Order</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% Object.entries(monthlyStats).forEach(([month, stat]) => { %>
+                        <tr class="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
+                            <td class="py-3 px-4 font-bold text-zinc-800">
+                                <%= new Date(month + '-01').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) %>
+                            </td>
+                            <td class="py-3 px-4 font-bold text-zinc-700"><%= stat.count %></td>
+                            <td class="py-3 px-4 font-black text-green-700">Rs. <%= stat.total.toFixed(2) %></td>
+                            <td class="py-3 px-4 font-bold text-zinc-500">Rs. <%= (stat.total / stat.count).toFixed(2) %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+            <button onclick="filterOrders('all')" id="tab-all"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-zinc-900 text-white">
+                All Orders (<%= orders.length %>)
+            </button>
+            <button onclick="filterOrders('pending')" id="tab-pending"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
+                Pending (<%= orders.filter(o => o.status === 'pending').length %>)
+            </button>
+            <button onclick="filterOrders('confirmed')" id="tab-confirmed"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
+                Confirmed (<%= orders.filter(o => o.status === 'confirmed').length %>)
+            </button>
+            <button onclick="filterOrders('shipped')" id="tab-shipped"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
+                Shipped (<%= orders.filter(o => o.status === 'shipped').length %>)
+            </button>
+            <button onclick="filterOrders('delivered')" id="tab-delivered"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
+                Delivered (<%= orders.filter(o => o.status === 'delivered').length %>)
+            </button>
+            <button onclick="filterOrders('cancelled')" id="tab-cancelled"
+                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
+                Cancelled (<%= orders.filter(o => o.status === 'cancelled').length %>)
+            </button>
+        </div>
+
+        <!-- Orders List -->
+        <div id="ordersContainer" class="space-y-4">
+            <% orders.forEach(order => { %>
+            <div class="order-card bg-white rounded-2xl border border-zinc-100 shadow-sm p-6"
+                data-status="<%= order.status %>">
+                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+
+                    <!-- Customer Info -->
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="status-badge text-xs font-black px-3 py-1 rounded-full
+                                <%= order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                    order.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
+                                    order.status === 'shipped' ? 'bg-purple-100 text-purple-700' :
+                                    order.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                                    order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                                    'bg-zinc-100 text-zinc-700' %>">
+                                <%= order.status.charAt(0).toUpperCase() + order.status.slice(1) %>
+                            </span>
+                            <span class="text-xs text-zinc-400 font-bold">
+                                <%= new Date(order.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) %>
+                            </span>
+                        </div>
+                        <p class="font-black text-zinc-900 text-lg">
+                            <%= order.addresses?.first_name %> <%= order.addresses?.last_name %>
+                        </p>
+                        <p class="text-sm text-zinc-500"><%= order.addresses?.phone %></p>
+                        <p class="text-sm text-zinc-500"><%= order.email %></p>
+                        <p class="text-sm text-zinc-500 mt-1">
+                            <%= order.addresses?.address %>, <%= order.addresses?.city %> - <%= order.addresses?.pin_code %>
+                        </p>
+                    </div>
+
+                    <!-- Items -->
+                    <div class="flex-1">
+                        <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Items</p>
+                        <% order.order_items.forEach(item => { %>
+                        <div class="flex justify-between text-sm py-1.5 border-b border-zinc-50 last:border-0">
+                            <span class="font-bold text-zinc-700">
+                                <%= item.product_name %>
+                                <span class="text-zinc-400 font-medium">x<%= item.quantity %></span>
+                            </span>
+                            <span class="font-black text-zinc-900">Rs. <%= item.price * item.quantity %></span>
+                        </div>
+                        <% }) %>
+                        <div class="flex justify-between mt-2 pt-2 border-t border-zinc-100">
+                            <span class="text-sm font-black text-zinc-900">Total</span>
+                            <span class="text-sm font-black text-green-700">Rs. <%= order.total %></span>
+                        </div>
+                    </div>
+
+                    <!-- Status Update -->
+                    <div class="md:w-44">
+                        <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Update Status</p>
+                        <select onchange="updateStatus('<%= order.id %>', this)"
+                            class="w-full p-3 rounded-xl border border-zinc-200 outline-none focus:border-green-600 text-sm font-bold bg-white transition-all cursor-pointer">
+                            <option value="pending" <%= order.status === 'pending' ? 'selected' : '' %>>Pending</option>
+                            <option value="confirmed" <%= order.status === 'confirmed' ? 'selected' : '' %>>Confirmed</option>
+                            <option value="shipped" <%= order.status === 'shipped' ? 'selected' : '' %>>Shipped</option>
+                            <option value="delivered" <%= order.status === 'delivered' ? 'selected' : '' %>>Delivered</option>
+                            <option value="cancelled" <%= order.status === 'cancelled' ? 'selected' : '' %>>Cancelled</option>
+                        </select>
+                        <p class="text-[10px] text-zinc-400 font-bold mt-2 text-center">
+                            #<%= order.id.toString().slice(0, 8) %>
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+            <% }) %>
+        </div>
+
+    </div>
+
+    <%- include("partials/footer") %>
+
+</body>
+</html>

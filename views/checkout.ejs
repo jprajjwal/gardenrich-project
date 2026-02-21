@@ -23,10 +23,11 @@
                         <h2 class="text-xl font-bold">Contact Information</h2>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="email" name="email" placeholder="Email Address"
-                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
-                        <input type="tel" name="phone" placeholder="Phone Number"
-                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all">
+                        <input type="email" name="email" placeholder="Email Address" required
+                            value="<%= user?.email || '' %>"
+                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all font-medium">
+                        <input type="tel" name="phone" placeholder="Phone Number" required
+                            class="w-full p-4 rounded-xl border border-zinc-200 focus:border-green-600 outline-none transition-all font-medium">
                     </div>
                 </div>
 
@@ -69,22 +70,24 @@
                     <div id="newAddressForm" class="space-y-4 <%= addresses.length > 0 ? 'hidden' : '' %>">
                         <div class="grid grid-cols-2 gap-4">
                             <input type="text" name="first_name" placeholder="First Name"
-                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                             <input type="text" name="last_name" placeholder="Last Name"
-                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                         </div>
+                        <input type="tel" name="address_phone" placeholder="Phone Number"
+                            class="w-full p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                         <input type="text" name="address" placeholder="Address (House No, Building, Street)"
-                            class="w-full p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                            class="w-full p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                         <div class="grid grid-cols-2 gap-4">
                             <input type="text" name="city" placeholder="City"
-                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                             <input type="text" name="pin_code" placeholder="PIN Code"
-                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all">
+                                class="p-4 rounded-xl border border-zinc-200 outline-none focus:border-green-600 transition-all font-medium">
                         </div>
                         <% if (addresses.length > 0) { %>
                         <button type="button" onclick="cancelNewAddress()"
                             class="text-sm font-bold text-zinc-400 hover:text-zinc-600">
-                            Cancel
+                            ← Use Saved Address
                         </button>
                         <% } %>
                     </div>
@@ -97,57 +100,73 @@
                         <h2 class="text-xl font-bold">Payment Method</h2>
                     </div>
                     <div class="space-y-3">
-                        <label class="flex items-center p-4 rounded-xl border border-zinc-100 bg-zinc-200 opacity-50 cursor-not-allowed">
+                        <label class="flex items-center p-4 rounded-xl border border-zinc-100 bg-zinc-100 opacity-50 cursor-not-allowed">
                             <input type="radio" name="payment" disabled class="w-4 h-4 accent-green-600">
-                            <span class="ml-3 font-bold text-zinc-700">Online Payment (Coming Soon)</span>
+                            <div class="ml-3">
+                                <span class="font-bold text-zinc-700 block">Online Payment</span>
+                                <span class="text-xs text-zinc-400">Coming Soon</span>
+                            </div>
                         </label>
                         <label class="flex items-center p-4 rounded-xl border-2 border-green-600 bg-green-50 cursor-pointer">
                             <input type="radio" name="payment" value="cod" checked class="w-4 h-4 accent-green-600">
-                            <span class="ml-3 font-bold text-green-900">Cash On Delivery (COD)</span>
+                            <div class="ml-3">
+                                <span class="font-bold text-green-900 block">Cash On Delivery</span>
+                                <span class="text-xs text-green-700">Pay when your order arrives</span>
+                            </div>
                         </label>
                     </div>
                 </div>
 
-                <button type="button" onclick="document.getElementById('checkoutForm').submit()"
+                <button type="submit"
                     class="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest">
-                    Place Order Now
+                    Place Order Now →
                 </button>
 
             </form>
 
-            <!-- Order Review -->
+            <!-- Order Review Panel -->
             <div class="lg:w-96">
-                <div class="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100 sticky top-24">
-                    <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-6">Order Review</h2>
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100 sticky top-24">
+                    <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-5 pb-4 border-b border-zinc-100">
+                        Order Review (<%= cartItems.length %> items)
+                    </h2>
 
-                    <div class="space-y-4 mb-8">
-                        <% cart.items.forEach(item => { %>
-                        <div class="flex gap-4">
-                            <div class="w-16 h-16 bg-zinc-100 rounded-lg overflow-hidden shrink-0">
-                                <img src="<%= item.productId.image %>" class="w-full h-full object-cover">
+                    <div class="space-y-4 mb-6">
+                        <% cartItems.forEach(item => { %>
+                        <div class="flex gap-3 items-center">
+                            <div class="w-14 h-14 bg-zinc-100 rounded-xl overflow-hidden shrink-0">
+                                <img src="<%= item.product_image %>" class="w-full h-full object-cover">
                             </div>
-                            <div class="flex-1">
-                                <h4 class="text-sm font-bold text-zinc-800 leading-tight"><%= item.productId.name %></h4>
-                                <p class="text-[10px] text-zinc-400 font-bold"><%= item.productId.weight %></p>
+                            <div class="flex-1 min-w-0">
+                                <h4 class="text-sm font-bold text-zinc-800 leading-tight truncate"><%= item.product_name %></h4>
+                                <p class="text-[10px] text-zinc-400 font-bold mt-0.5"><%= item.weight %></p>
                                 <p class="text-[10px] text-zinc-400 font-bold">Qty: <%= item.quantity %></p>
                             </div>
-                            <span class="text-sm font-black">Rs. <%= item.productId.price * item.quantity %></span>
+                            <span class="text-sm font-black text-zinc-900 shrink-0">
+                                Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %>
+                            </span>
                         </div>
                         <% }) %>
                     </div>
 
-                    <div class="border-t border-zinc-50 pt-4 space-y-2">
+                    <div class="border-t border-zinc-100 pt-4 space-y-2">
                         <div class="flex justify-between text-sm text-zinc-500 font-medium">
                             <span>Subtotal</span>
-                            <span>Rs. <%= cart.items.reduce((acc, item) => acc + (item.productId.price * item.quantity), 0).toFixed(2) %></span>
+                            <span>Rs. <%= total.toLocaleString('en-IN') %></span>
                         </div>
-                        <div class="flex justify-between text-sm text-red-500 font-medium">
-                            <span>Discount</span>
-                            <span>- Rs. 0.00</span>
+                        <div class="flex justify-between text-sm text-zinc-500 font-medium">
+                            <span>Shipping</span>
+                            <span class="text-green-600 font-bold">FREE</span>
                         </div>
-                        <div class="flex justify-between pt-4 border-t border-zinc-100">
-                            <span class="font-bold">To Pay</span>
-                            <span class="text-xl font-black text-green-700">Rs. <%= cart.items.reduce((acc, item) => acc + (item.productId.price * item.quantity), 0).toFixed(2) %></span>
+                        <div class="flex justify-between text-sm text-zinc-500 font-medium">
+                            <span>Taxes</span>
+                            <span>Included</span>
+                        </div>
+                        <div class="flex justify-between pt-3 border-t border-zinc-100">
+                            <span class="font-black text-zinc-900">To Pay</span>
+                            <span class="text-xl font-black text-green-700">
+                                Rs. <%= total.toLocaleString('en-IN') %>
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -157,30 +176,6 @@
     </div>
 
     <%- include("partials/footer") %>
-
-    <script>
-        function selectAddress(label) {
-            document.querySelectorAll('[name="selected_address"]').forEach(r => {
-                r.closest('label').classList.remove('border-green-600', 'bg-green-50');
-                r.closest('label').classList.add('border-zinc-200', 'bg-white');
-            });
-            label.classList.add('border-green-600', 'bg-green-50');
-            label.classList.remove('border-zinc-200', 'bg-white');
-        }
-
-        function showNewAddressForm() {
-            document.getElementById('newAddressForm').classList.remove('hidden');
-            document.getElementById('savedAddresses').classList.add('hidden');
-            document.getElementById('addNewBtn').classList.add('hidden');
-        }
-
-        function cancelNewAddress() {
-            document.getElementById('newAddressForm').classList.add('hidden');
-            document.getElementById('savedAddresses').classList.remove('hidden');
-            document.getElementById('addNewBtn').classList.remove('hidden');
-        }
-    </script>
-
 </body>
 
 </html>
