@@ -4,13 +4,14 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const path = require("path");
 const multer = require("multer");
-const upload = multer({ storage: multer.memoryStorage() }); // Store file in memory briefly
+const upload = multer({ storage: multer.memoryStorage() });
 const nodemailer = require("nodemailer");
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "prajjwalj02@gmail.com", // your gmail
-    pass: "iwxedcnijtuvtuzr", // Gmail app password (not your real password)
+    user: "prajjwalj02@gmail.com",
+    pass: "iwxedcnijtuvtuzr",
   },
 });
 
@@ -20,120 +21,201 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.use(
   session({
-    secret: "gardenrich-secret-key", // Use a random string
+    secret: "gardenrich-secret-key",
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false },
-  }),
+  })
 );
 
 const supabaseUrl = "https://cqdtrsmoqeszhdmippzx.supabase.co";
-const supabaseKey = "sb_publishable_oCt8OHvgiR72BjjsIOkjbw_R386qFfY";
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseAnonKey = "sb_publishable_oCt8OHvgiR72BjjsIOkjbw_R386qFfY";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || supabaseAnonKey;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 app.set("view engine", "ejs");
 
-// Now req.session exists, so this won't crash!
 app.use(async (req, res, next) => {
   res.locals.user = req.session.user || null;
 
   let totalItems = 0;
   if (req.session.user) {
-    // Query the 'carts' table for all items belonging to this user
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("carts")
       .select("quantity")
       .eq("user_id", req.session.user.id);
 
-    // Sum up the quantities
     if (data) {
       totalItems = data.reduce((acc, item) => acc + item.quantity, 0);
     }
   }
 
-  // This variable 'cartCount' can now be used in any .ejs file
   res.locals.cartCount = totalItems;
   next();
 });
 
+// ── Helper: enrich cart rows with product + variant data ─────
+async function enrichCartItems(rawCart) {
+  if (!rawCart || rawCart.length === 0) return [];
+
+  const productIds = [...new Set(rawCart.map((r) => parseInt(r.product_id, 10)))].filter(Boolean);
+
+  const productResults = await Promise.all(
+    productIds.map((pid) =>
+      supabase.from("products").select("id, name, image, brand").eq("id", pid).maybeSingle()
+    )
+  );
+
+  const variantResults = await Promise.all(
+    productIds.map((pid) =>
+      supabase
+        .from("product_variants")
+        .select("id, product_id, price, weight, mrp, stock")
+        .eq("product_id", pid)
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+    )
+  );
+
+  productResults.forEach(({ error }, i) => {
+    if (error) console.error(`Product fetch error for id ${productIds[i]}:`, error.message);
+  });
+  variantResults.forEach(({ error }, i) => {
+    if (error) console.error(`Variant fetch error for product_id ${productIds[i]}:`, error.message);
+  });
+
+  const productMap = {};
+  productResults.forEach(({ data }) => {
+    if (data) productMap[parseInt(data.id, 10)] = data;
+  });
+
+  const variantMap = {};
+  variantResults.forEach(({ data }) => {
+    if (data) variantMap[parseInt(data.product_id, 10)] = data;
+  });
+
+  return rawCart.map((item) => {
+    const pid = parseInt(item.product_id, 10);
+    const product = productMap[pid] || {};
+    const variant = variantMap[pid] || {};
+    return {
+      ...item,
+      variant_id: variant.id || null,
+      price: variant.price || 0,
+      weight: variant.weight || "",
+      mrp: variant.mrp || null,
+      stock: variant.stock !== undefined ? variant.stock : 99,
+      product_name: product.name || "",
+      product_image: product.image || "",
+      product_brand: product.brand || "",
+    };
+  });
+}
+
+// ── Home ──────────────────────────────────────────────────────
 app.get("/", async (req, res) => {
-    try {
-        const searchQuery = req.query.search;
-        const activeCategory = req.query.category || "all";
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  try {
+    const searchQuery = req.query.search;
+    const activeCategory = req.query.category || "all";
 
-        const { data: categories } = await supabase.from("categories").select("*");
+    const { data: categories } = await supabase.from("categories").select("*");
 
-        let queryBuilder = supabase
-            .from("products")
-            .select("*, product_variants(*)");
+    let queryBuilder = supabase
+      .from("products")
+      .select("*, product_variants(*)");
 
-        if (searchQuery) queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
-        if (activeCategory && activeCategory !== "all") {
-            queryBuilder = queryBuilder.eq("category", activeCategory);
-        }
-
-        const { data: products, error } = await queryBuilder;
-        if (error) throw error;
-
-        let cartMap = {};
-        if (req.session.user) {
-            const { data: cartItems } = await supabase
-                .from("carts")
-                .select("product_id, quantity")
-                .eq("user_id", req.session.user.id);
-
-            if (cartItems) {
-                cartItems.forEach(item => {
-                    cartMap[item.product_id] = item.quantity;
-                });
-            }
-        }
-
-        res.render("index", {
-            products: products || [],
-            query: searchQuery || "",
-            cartMap,
-            categories: categories || [],
-            activeCategory,
-        });
-    } catch (err) {
-        console.error("Error:", err.message);
-        res.status(500).send("Error fetching products");
+    if (searchQuery) queryBuilder = queryBuilder.ilike("name", `%${searchQuery}%`);
+    if (activeCategory && activeCategory !== "all") {
+      queryBuilder = queryBuilder.eq("category", activeCategory);
     }
+
+    const { data: products, error } = await queryBuilder;
+    if (error) throw error;
+
+    let cartMap = {};
+    if (req.session.user) {
+      const { data: cartItems } = await supabase
+        .from("carts")
+        .select("product_id, quantity")
+        .eq("user_id", req.session.user.id);
+
+      if (cartItems) {
+        cartItems.forEach((item) => {
+          cartMap[item.product_id] = item.quantity;
+        });
+      }
+    }
+
+    res.render("index", {
+      products: products || [],
+      query: searchQuery || "",
+      cartMap,
+      categories: categories || [],
+      activeCategory,
+    });
+  } catch (err) {
+    console.error("Error:", err.message);
+    res.status(500).send("Error fetching products");
+  }
 });
 
+// ── Auth ──────────────────────────────────────────────────────
 app.get("/login", (req, res) => {
-  res.render("login");
+  res.render("login", {
+    error: req.query.error || null,
+    email: req.query.email || "",
+  });
 });
 
+// FIX: was router.post (router undefined) — changed to app.post
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) {
-    return res.send("Login failed: " + error.message);
+    if (error) {
+      const msg = error.message.toLowerCase();
+      let errorCode = "unknown";
+
+      if (
+        msg.includes("invalid login credentials") ||
+        msg.includes("invalid email or password") ||
+        msg.includes("email not confirmed")
+      ) {
+        errorCode = "invalid_credentials";
+      } else if (msg.includes("user not found")) {
+        errorCode = "user_not_found";
+      } else if (msg.includes("disabled") || msg.includes("banned")) {
+        errorCode = "account_disabled";
+      }
+
+      return res.redirect(`/login?error=${errorCode}&email=${encodeURIComponent(email)}`);
+    }
+
+    // Fetch profile to get role
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", data.user.id)
+      .single();
+
+    req.session.user = {
+      id: data.user.id,
+      email: data.user.email,
+      name: profile?.name || "",
+      role: profile?.role || "USER",
+    };
+
+    return res.redirect("/");
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.redirect(`/login?error=unknown&email=${encodeURIComponent(email)}`);
   }
-
-  const user = data.user;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name, role")
-    .eq("id", user.id)
-    .single();
-
-  req.session.user = {
-    id: user.id,
-    email: user.email,
-    name: profile?.name || "User",
-    role: profile?.role || "USER",
-  };
-
-  res.redirect("/");
 });
 
 function isAdmin(req, res, next) {
@@ -143,18 +225,12 @@ function isAdmin(req, res, next) {
   next();
 }
 
-app.get("/signup", (req, res) => {
-  res.render("signup");
-});
+app.get("/signup", (req, res) => res.render("signup"));
 
 app.post("/signup", async (req, res) => {
   const { name, email, password, mobile } = req.body;
 
-  // 1️⃣ Create auth user
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
     console.error("Signup Error:", error.message);
@@ -163,22 +239,18 @@ app.post("/signup", async (req, res) => {
 
   const user = data.user;
 
-  // 2️⃣ Store extra details in profiles table
   const { error: profileError } = await supabase.from("profiles").insert([
-    {
-      id: user.id,
-      name,
-      email,
-      mobile,
-    },
+    { id: user.id, name, email, mobile },
   ]);
 
-  if (profileError) {
-    console.error("Profile Error:", profileError.message);
-  }
+  if (profileError) console.error("Profile Error:", profileError.message);
 
-  // 3️⃣ Save session
-  req.session.user = user;
+  req.session.user = {
+    id: user.id,
+    email: user.email,
+    name: name,
+    role: "USER",
+  };
 
   res.redirect("/");
 });
@@ -188,346 +260,637 @@ app.get("/logout", (req, res) => {
   res.redirect("/login");
 });
 
+// ── Admin ─────────────────────────────────────────────────────
 app.get("/admin", isAdmin, async (req, res) => {
-    const { data: categories } = await supabase.from("categories").select("*");
-    res.render("admin", { categories: categories || [] });
+  const { data: categories } = await supabase.from("categories").select("*");
+  res.render("admin", { categories: categories || [] });
 });
 
 app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
-    try {
-        const { name, brand, description, category, is_featured } = req.body;
-        const file = req.file;
+  try {
+    const { name, brand, description, category, is_featured } = req.body;
+    const file = req.file;
 
-        if (!file) return res.status(400).send("Please upload an image.");
+    if (!file) return res.status(400).send("Please upload an image.");
 
-        // Upload image
-        const fileName = `${Date.now()}-${file.originalname}`;
-        const { error: uploadError } = await supabase.storage
-            .from("product-images")
-            .upload(fileName, file.buffer, {
-                contentType: file.mimetype,
-                upsert: false,
-            });
+    const fileName = `${Date.now()}-${file.originalname}`;
+    const { error: uploadError } = await supabase.storage
+      .from("product-images")
+      .upload(fileName, file.buffer, { contentType: file.mimetype, upsert: false });
 
-        if (uploadError) throw uploadError;
+    if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage
-            .from("product-images")
-            .getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from("product-images")
+      .getPublicUrl(fileName);
 
-        const publicImageUrl = urlData.publicUrl;
+    const publicImageUrl = urlData.publicUrl;
 
-        // Insert product first
-        const { data: product, error: productError } = await supabase
-            .from("products")
-            .insert([{
-                name,
-                brand: brand || null,
-                description: description || null,
-                category: category || "all",
-                is_featured: is_featured === "true",
-                image: publicImageUrl,
-            }])
-            .select()
-            .single();
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .insert([{
+        name,
+        category: category || "all",
+        is_featured: is_featured === "true",
+        image: publicImageUrl,
+      }])
+      .select()
+      .single();
 
-        if (productError) throw productError;
+    if (productError) throw productError;
 
-        // Parse variants
-        const rawWeights = req.body["weightValue[]"] || req.body.weightValue;
-        const rawUnits = req.body["unit[]"] || req.body.unit;
-        const rawPrices = req.body["price[]"] || req.body.price;
-        const rawMrps = req.body["mrp[]"] || req.body.mrp;
-        const rawStocks = req.body["stock[]"] || req.body.stock;
+    const rawWeights = req.body["weightValue[]"] || req.body.weightValue;
+    const rawUnits = req.body["unit[]"] || req.body.unit;
+    const rawPrices = req.body["price[]"] || req.body.price;
+    const rawMrps = req.body["mrp[]"] || req.body.mrp;
+    const rawStocks = req.body["stock[]"] || req.body.stock;
 
-        const weightValues = Array.isArray(rawWeights) ? rawWeights : [rawWeights];
-        const units = Array.isArray(rawUnits) ? rawUnits : [rawUnits];
-        const prices = Array.isArray(rawPrices) ? rawPrices : [rawPrices];
-        const mrps = Array.isArray(rawMrps) ? rawMrps : [rawMrps];
-        const stocks = Array.isArray(rawStocks) ? rawStocks : [rawStocks];
+    const weightValues = Array.isArray(rawWeights) ? rawWeights : [rawWeights];
+    const units = Array.isArray(rawUnits) ? rawUnits : [rawUnits];
+    const prices = Array.isArray(rawPrices) ? rawPrices : [rawPrices];
+    const mrps = Array.isArray(rawMrps) ? rawMrps : [rawMrps];
+    const stocks = Array.isArray(rawStocks) ? rawStocks : [rawStocks];
 
-        const validVariants = weightValues
-            .map((val, i) => ({
-                weight: val,
-                unit: units[i],
-                price: prices[i],
-                mrp: mrps[i],
-                stock: stocks[i],
-            }))
-            .filter(v => v.weight && v.unit && v.price);
+    const validVariants = weightValues
+      .map((val, i) => ({
+        weight: val,
+        unit: units[i],
+        price: prices[i],
+        mrp: mrps[i],
+        stock: stocks[i],
+      }))
+      .filter((v) => v.weight && v.unit && v.price);
 
-        if (validVariants.length === 0) {
-            return res.status(400).send("Please add at least one valid variant.");
-        }
-
-        // Insert variants
-        const variantInserts = validVariants.map(v => ({
-            product_id: product.id,
-            weight: `${v.weight} ${v.unit}`,
-            price: parseFloat(v.price),
-            mrp: v.mrp ? parseFloat(v.mrp) : null,
-            stock: v.stock ? parseInt(v.stock) : 0,
-        }));
-
-        const { error: variantError } = await supabase
-            .from("product_variants")
-            .insert(variantInserts);
-
-        if (variantError) throw variantError;
-
-        res.redirect("/");
-    } catch (err) {
-        console.error("Upload Error:", err.message);
-        res.status(500).send("Failed to add product: " + err.message);
+    if (validVariants.length === 0) {
+      return res.status(400).send("Please add at least one valid variant.");
     }
+
+    const variantInserts = validVariants.map((v) => ({
+      product_id: product.id,
+      weight: `${v.weight} ${v.unit}`,
+      price: parseFloat(v.price),
+      mrp: v.mrp ? parseFloat(v.mrp) : null,
+      stock: v.stock ? parseInt(v.stock) : 0,
+    }));
+
+    const { error: variantError } = await supabase
+      .from("product_variants")
+      .insert(variantInserts);
+
+    if (variantError) throw variantError;
+
+    res.redirect("/");
+  } catch (err) {
+    console.error("Upload Error:", err.message);
+    res.status(500).send("Failed to add product: " + err.message);
+  }
 });
 
 app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (req, res) => {
-    try {
-        const productId = parseInt(req.params.id);
-        const { name, price, weight, category } = req.body;
+  try {
+    const productId = parseInt(req.params.id);
+    const { name, category } = req.body;
 
-        let updateData = {
-            name,
-            price: parseFloat(price),
-            weight,
-            category,
-        };
+    let updateData = { name, category };
 
-        if (req.file) {
-            const fileName = `${Date.now()}-${req.file.originalname}`;
+    if (req.file) {
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
 
-            const { error: uploadError } = await supabase.storage
-                .from("product-images")
-                .upload(fileName, req.file.buffer, {
-                    contentType: req.file.mimetype,
-                    upsert: false,
-                });
+      const { data: urlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(fileName);
 
-            if (uploadError) throw uploadError;
-
-            const { data: urlData } = supabase.storage
-                .from("product-images")
-                .getPublicUrl(fileName);
-
-            updateData.image = urlData.publicUrl;
-        }
-
-        const { data, error } = await supabase
-            .from("products")
-            .update(updateData)
-            .eq("id", productId)
-            .select();
-
-        if (error) throw error;
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Edit Error:", err.message);
-        res.status(500).json({ error: err.message });
+      updateData.image = urlData.publicUrl;
     }
+
+    const { error } = await supabase
+      .from("products")
+      .update(updateData)
+      .eq("id", productId);
+
+    if (error) throw error;
+
+    const rawVariantIds = req.body["variantId[]"] || req.body.variantId;
+    const rawVariantStocks = req.body["variantStock[]"] || req.body.variantStock;
+
+    if (rawVariantIds && rawVariantStocks) {
+      const variantIds = Array.isArray(rawVariantIds) ? rawVariantIds : [rawVariantIds];
+      const variantStocks = Array.isArray(rawVariantStocks) ? rawVariantStocks : [rawVariantStocks];
+
+      await Promise.all(
+        variantIds.map(async (vid, i) => {
+          const newStock = parseInt(variantStocks[i], 10);
+          if (isNaN(newStock) || newStock < 0) return;
+          const variantId = parseInt(vid, 10);
+          console.log(`Updating variant ${variantId} stock → ${newStock}`);
+
+          const { error: rpcErr } = await supabase.rpc("update_variant_stock", {
+            p_variant_id: variantId,
+            p_new_stock: newStock,
+          });
+
+          if (rpcErr) {
+            console.error(`RPC failed for variant ${variantId}: ${rpcErr.message} — trying direct update`);
+            const { error: directErr } = await supabase
+              .from("product_variants")
+              .update({ stock: newStock })
+              .eq("id", variantId);
+            if (directErr) console.error(`Direct update also failed: ${directErr.message}`);
+          }
+        })
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Edit Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { imageUrl } = req.body;
+
+    const { error: dbError } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", productId);
+
+    if (dbError) throw dbError;
+
+    if (imageUrl && imageUrl.includes("supabase.co")) {
+      const fileName = imageUrl.split("/").pop();
+      await supabase.storage.from("product-images").remove([fileName]);
+    }
+
+    res.status(200).json({ message: "Product deleted successfully" });
+  } catch (err) {
+    console.error("Delete Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/admin/orders", isAdmin, async (req, res) => {
-    const { data: orders } = await supabase
-        .from("orders")
-        .select("*, addresses(*), order_items(*)")
-        .order("created_at", { ascending: false });
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("*, addresses(*), order_items(*)")
+    .order("created_at", { ascending: false });
 
-    const today = new Date().toISOString().split("T")[0];
-    const thisMonth = new Date().toISOString().slice(0, 7);
+  const today = new Date().toISOString().split("T")[0];
+  const thisMonth = new Date().toISOString().slice(0, 7);
 
-    const todayOrders = orders?.filter(o => o.created_at.startsWith(today)) || [];
+  const todayOrders = orders?.filter((o) => o.created_at.startsWith(today)) || [];
+  const thisMonthOrders = orders?.filter((o) => o.created_at.startsWith(thisMonth)).length || 0;
+  const thisMonthRevenue =
+    orders
+      ?.filter((o) => o.created_at.startsWith(thisMonth))
+      .reduce((acc, o) => acc + o.total, 0) || 0;
 
-    const thisMonthOrders = orders?.filter(o => o.created_at.startsWith(thisMonth)).length || 0;
-    const thisMonthRevenue = orders?.filter(o => o.created_at.startsWith(thisMonth))
-        .reduce((acc, o) => acc + o.total, 0) || 0;
+  const monthlyStats = {};
+  orders?.forEach((order) => {
+    const month = order.created_at.slice(0, 7);
+    if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
+    monthlyStats[month].count += 1;
+    monthlyStats[month].total += order.total;
+  });
 
-    const monthlyStats = {};
-    orders?.forEach(order => {
-        const month = order.created_at.slice(0, 7);
-        if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
-        monthlyStats[month].count += 1;
-        monthlyStats[month].total += order.total;
-    });
-
-    res.render("admin-orders", {
-        orders: orders || [],
-        todayOrders,
-        thisMonthOrders,
-        thisMonthRevenue,
-        monthlyStats,
-    });
+  res.render("admin-orders", {
+    orders: orders || [],
+    todayOrders,
+    thisMonthOrders,
+    thisMonthRevenue,
+    monthlyStats,
+  });
 });
 
-// Update order status
 app.post("/admin/orders/update-status", isAdmin, async (req, res) => {
-    const { orderId, status } = req.body;
+  const { orderId, status } = req.body;
 
-    const { error } = await supabase
-        .from("orders")
-        .update({ status })
-        .eq("id", orderId);
+  const { error } = await supabase
+    .from("orders")
+    .update({ status })
+    .eq("id", orderId);
 
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
 });
 
-app.get("/my-orders", async (req, res) => {
-    if (!req.session.user) return res.redirect("/login");
-
-    const { data: orders } = await supabase
-        .from("orders")
-        .select("*, addresses(*), order_items(*)")
-        .eq("user_id", req.session.user.id)
-        .order("created_at", { ascending: false });
-
-    res.render("my-orders", { orders: orders || [] });
-});
-
-app.get("/my-orders/:id", async (req, res) => {
-    if (!req.session.user) return res.redirect("/login");
-
-    const { data: order } = await supabase
-        .from("orders")
-        .select("*, addresses(*), order_items(*)")
-        .eq("id", req.params.id)
-        .eq("user_id", req.session.user.id)  // security: only own orders
-        .single();
-
-    if (!order) return res.status(404).send("Order not found.");
-
-    res.render("order-detail", { order });
-});
-
+// ── Cart ──────────────────────────────────────────────────────
 app.get("/cart", async (req, res) => {
-    if (!req.session.user) return res.redirect("/login");
+  if (!req.session.user) return res.redirect("/login");
 
-    const { data: cartItems } = await supabase
-        .from("carts")
-        .select("*, products(id, name, image, brand, product_variants(id, price, weight, mrp))")
-        .eq("user_id", req.session.user.id);
+  const { data: rawCart } = await supabase
+    .from("carts")
+    .select("*")
+    .eq("user_id", req.session.user.id);
 
-    // Attach price from first variant to each cart item
-    const enrichedCart = (cartItems || []).map(item => {
-        const product = item.products;
-        const firstVariant = product?.product_variants?.[0] || {};
-        return {
-            ...item,
-            price: firstVariant.price || 0,
-            weight: firstVariant.weight || "",
-            mrp: firstVariant.mrp || null,
-            stock: firstVariant.stock || 99,
-            product_name: product?.name || "",
-            product_image: product?.image || "",
-            product_brand: product?.brand || "",
-        };
-    });
+  const enrichedCart = await enrichCartItems(rawCart || []);
+  const total = enrichedCart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const cartCount = enrichedCart.reduce((acc, item) => acc + item.quantity, 0);
 
-    const total = enrichedCart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const cartCount = enrichedCart.reduce((acc, item) => acc + item.quantity, 0);
-
-    res.render("cart", {
-        cartItems: enrichedCart,
-        total,
-        cartCount,
-    });
+  res.render("cart", { cartItems: enrichedCart, total, cartCount });
 });
 
 app.post("/cart/add", async (req, res) => {
-    if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
+  if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-    const { productId } = req.body;
+  const { productId } = req.body;
 
-    // Get stock from first variant
-    const { data: variants } = await supabase
-        .from("product_variants")
-        .select("stock, price")
-        .eq("product_id", productId)
-        .order("id", { ascending: true })
-        .limit(1);
+  const { data: variants } = await supabase
+    .from("product_variants")
+    .select("stock, price")
+    .eq("product_id", productId)
+    .order("id", { ascending: true })
+    .limit(1);
 
-    const stock = variants?.[0]?.stock || 99;
+  const stock = variants?.[0]?.stock !== undefined ? variants[0].stock : 99;
 
-    const { data: existing } = await supabase
-        .from("carts")
-        .select("*")
-        .eq("user_id", req.session.user.id)
-        .eq("product_id", productId)
-        .single();
+  if (stock === 0) {
+    return res.status(400).json({ error: "Out of stock", stock: 0 });
+  }
 
-    if (existing) {
-        const newQty = Math.min(existing.quantity + 1, stock);
-        await supabase
-            .from("carts")
-            .update({ quantity: newQty })
-            .eq("id", existing.id);
-    } else {
-        await supabase
-            .from("carts")
-            .insert([{ user_id: req.session.user.id, product_id: productId, quantity: 1 }]);
-    }
+  const { data: existing } = await supabase
+    .from("carts")
+    .select("*")
+    .eq("user_id", req.session.user.id)
+    .eq("product_id", productId)
+    .single();
 
-    const { data: allItems } = await supabase
-        .from("carts")
-        .select("quantity")
-        .eq("user_id", req.session.user.id);
+  if (existing) {
+    const newQty = Math.min(existing.quantity + 1, stock);
+    await supabase
+      .from("carts")
+      .update({ quantity: newQty })
+      .eq("id", existing.id);
+  } else {
+    await supabase
+      .from("carts")
+      .insert([{ user_id: req.session.user.id, product_id: productId, quantity: 1 }]);
+  }
 
-    const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
-    res.json({ success: true, totalItems, stock });
+  const { data: allItems } = await supabase
+    .from("carts")
+    .select("quantity")
+    .eq("user_id", req.session.user.id);
+
+  const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
+  res.json({ success: true, totalItems, stock });
 });
 
 app.post("/cart/update", async (req, res) => {
-    if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
+  if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-    const { productId, quantity } = req.body;
+  const { productId, quantity } = req.body;
 
-    if (quantity <= 0) {
-        await supabase
-            .from("carts")
-            .delete()
-            .eq("user_id", req.session.user.id)
-            .eq("product_id", productId);
-    } else {
-        // Get stock limit
-        const { data: variants } = await supabase
-            .from("product_variants")
-            .select("stock")
-            .eq("product_id", productId)
-            .order("id", { ascending: true })
-            .limit(1);
+  if (quantity <= 0) {
+    await supabase
+      .from("carts")
+      .delete()
+      .eq("user_id", req.session.user.id)
+      .eq("product_id", productId);
+  } else {
+    const { data: variants } = await supabase
+      .from("product_variants")
+      .select("stock")
+      .eq("product_id", productId)
+      .order("id", { ascending: true })
+      .limit(1);
 
-        const stock = variants?.[0]?.stock || 99;
-        const safeQty = Math.min(quantity, stock);
+    const stock = variants?.[0]?.stock !== undefined ? variants[0].stock : 99;
+    const safeQty = Math.min(quantity, stock);
 
-        const { data: existing } = await supabase
-            .from("carts")
-            .select("id")
-            .eq("user_id", req.session.user.id)
-            .eq("product_id", productId)
-            .single();
+    const { data: existing } = await supabase
+      .from("carts")
+      .select("id")
+      .eq("user_id", req.session.user.id)
+      .eq("product_id", productId)
+      .single();
 
-        if (existing) {
-            await supabase
-                .from("carts")
-                .update({ quantity: safeQty })
-                .eq("id", existing.id);
-        } else {
-            await supabase
-                .from("carts")
-                .insert([{ user_id: req.session.user.id, product_id: productId, quantity: safeQty }]);
-        }
-    }
-
-    const { data: allItems } = await supabase
+    if (existing) {
+      await supabase
         .from("carts")
-        .select("quantity")
-        .eq("user_id", req.session.user.id);
+        .update({ quantity: safeQty })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("carts").insert([
+        { user_id: req.session.user.id, product_id: productId, quantity: safeQty },
+      ]);
+    }
+  }
 
-    const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
-    res.json({ success: true, totalItems });
+  const { data: allItems } = await supabase
+    .from("carts")
+    .select("quantity")
+    .eq("user_id", req.session.user.id);
+
+  const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
+  res.json({ success: true, totalItems });
 });
 
+// ── Checkout ──────────────────────────────────────────────────
+app.get("/checkout", async (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
+
+  const { data: addresses } = await supabase
+    .from("addresses")
+    .select("*")
+    .eq("user_id", req.session.user.id)
+    .order("created_at", { ascending: false });
+
+  const { data: rawCart } = await supabase
+    .from("carts")
+    .select("*")
+    .eq("user_id", req.session.user.id);
+
+  const cartItems = await enrichCartItems(rawCart || []);
+  const total = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+
+  res.render("checkout", { addresses: addresses || [], cartItems, total });
+});
+
+app.post("/checkout", async (req, res) => {
+  try {
+    if (!req.session.user) return res.redirect("/login");
+
+    const { data: rawCart } = await supabase
+      .from("carts")
+      .select("*")
+      .eq("user_id", req.session.user.id);
+
+    if (!rawCart || rawCart.length === 0) {
+      return res.redirect("/cart");
+    }
+
+    const cartItems = await enrichCartItems(rawCart);
+
+    const stockErrors = cartItems.filter((item) => item.stock < item.quantity);
+    if (stockErrors.length > 0) {
+      const msgs = stockErrors
+        .map((item) =>
+          item.stock === 0
+            ? `"${item.product_name}" is out of stock`
+            : `"${item.product_name}" only has ${item.stock} left (you have ${item.quantity} in cart)`
+        )
+        .join(", ");
+      return res.status(400).send(`Stock issue: ${msgs}. Please update your cart.`);
+    }
+
+    const total = cartItems.reduce(
+      (acc, item) => acc + item.price * item.quantity,
+      0
+    );
+
+    const {
+      selected_address,
+      first_name,
+      last_name,
+      address_phone,
+      phone,
+      address,
+      city,
+      pin_code,
+      email,
+    } = req.body;
+
+    let addressId;
+    if (selected_address) {
+      addressId = selected_address;
+    } else {
+      const { data: newAddr, error: addrError } = await supabase
+        .from("addresses")
+        .insert([{
+          user_id: req.session.user.id,
+          first_name,
+          last_name,
+          phone: address_phone || phone,
+          address,
+          city,
+          pin_code,
+        }])
+        .select()
+        .single();
+
+      if (addrError) throw addrError;
+      addressId = newAddr.id;
+    }
+
+    const { data: addressData } = await supabase
+      .from("addresses")
+      .select("*")
+      .eq("id", addressId)
+      .single();
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert([{
+        user_id: req.session.user.id,
+        address_id: addressId,
+        email,
+        phone,
+        status: "pending",
+        total,
+      }])
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    const orderItems = cartItems.map((item) => ({
+      order_id: order.id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      product_image: item.product_image,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    await supabase.from("order_items").insert(orderItems);
+
+    await Promise.all(
+      cartItems.map(async (item) => {
+        let variantId = item.variant_id;
+        if (!variantId) {
+          const { data: vLookup } = await supabase
+            .from("product_variants")
+            .select("id, stock")
+            .eq("product_id", parseInt(item.product_id, 10))
+            .order("id", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (!vLookup) {
+            console.error(`No variant found for product_id ${item.product_id} — skipping`);
+            return;
+          }
+          variantId = vLookup.id;
+        }
+
+        const { data: vData, error: vErr } = await supabase
+          .from("product_variants")
+          .select("stock")
+          .eq("id", variantId)
+          .single();
+
+        if (vErr || !vData) {
+          console.error(`Stock read failed for variant ${variantId}:`, vErr?.message);
+          return;
+        }
+
+        const newStock = Math.max(0, vData.stock - item.quantity);
+        console.log(`Stock decrement: variant ${variantId}: ${vData.stock} → ${newStock}`);
+
+        // Try RPC first
+        const { error: fnErr } = await supabase.rpc("update_variant_stock", {
+          p_variant_id: variantId,
+          p_new_stock: newStock,
+        });
+
+        if (fnErr) {
+          console.warn(`RPC failed for variant ${variantId}: ${fnErr.message} — using direct update`);
+          // Direct update fallback — works when service key is set
+          const { error: directErr } = await supabase
+            .from("product_variants")
+            .update({ stock: newStock })
+            .eq("id", variantId);
+
+          if (directErr) {
+            console.error(`Direct stock update ALSO failed for variant ${variantId}: ${directErr.message}`);
+          } else {
+            console.log(`Direct stock update succeeded for variant ${variantId} → ${newStock}`);
+          }
+        }
+      })
+    );
+
+    await supabase.from("carts").delete().eq("user_id", req.session.user.id);
+
+    const buildItemsTable = (showUnitPrice) =>
+      cartItems
+        .map(
+          (item) => `
+          <tr>
+            <td style="padding:10px;border-bottom:1px solid #f0f0f0;">
+              <img src="${item.product_image}" width="50"
+                style="border-radius:8px;vertical-align:middle;margin-right:10px;">
+              ${item.product_name}
+            </td>
+            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.weight}</td>
+            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.quantity}</td>
+            ${showUnitPrice ? `<td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;">Rs. ${item.price.toLocaleString("en-IN")}</td>` : ""}
+            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:bold;">
+              Rs. ${(item.price * item.quantity).toLocaleString("en-IN")}
+            </td>
+          </tr>`
+        )
+        .join("");
+
+    const tableHeader = (showUnitPrice) => `
+      <thead>
+        <tr style="background:#f4f4f5;">
+          <th style="padding:10px;text-align:left;font-size:12px;text-transform:uppercase;">Product</th>
+          <th style="padding:10px;text-align:center;font-size:12px;text-transform:uppercase;">Size</th>
+          <th style="padding:10px;text-align:center;font-size:12px;text-transform:uppercase;">Qty</th>
+          ${showUnitPrice ? '<th style="padding:10px;text-align:right;font-size:12px;text-transform:uppercase;">Unit Price</th>' : ""}
+          <th style="padding:10px;text-align:right;font-size:12px;text-transform:uppercase;">Total</th>
+        </tr>
+      </thead>`;
+
+    await transporter.sendMail({
+      from: '"GardenRich Orders" <prajjwalj02@gmail.com>',
+      to: "sahilcingh@gmail.com",
+      cc: "prajjwalj02@gmail.com",
+      subject: `🛒 New Order #${order.id.toString().slice(0, 8)} — Rs. ${total.toLocaleString("en-IN")}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:620px;margin:0 auto;">
+          <h2 style="background:#18181b;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">
+            New Order Received
+          </h2>
+          <div style="background:white;padding:20px;border:1px solid #f0f0f0;border-radius:0 0 12px 12px;">
+            <p><strong>Customer:</strong> ${addressData.first_name} ${addressData.last_name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Phone:</strong> ${phone}</p>
+            <p><strong>Address:</strong> ${addressData.address}, ${addressData.city} — ${addressData.pin_code}</p>
+            <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+              ${tableHeader(true)}
+              <tbody>${buildItemsTable(true)}</tbody>
+            </table>
+            <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
+            <div style="text-align:right;">
+              <p style="font-size:20px;font-weight:900;color:#16a34a;">
+                Total: Rs. ${total.toLocaleString("en-IN")}
+              </p>
+              <p style="color:#888;font-size:12px;">Payment: Cash On Delivery</p>
+            </div>
+          </div>
+        </div>`,
+    });
+
+    await transporter.sendMail({
+      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      to: email,
+      subject: `✅ Order Confirmed — Rs. ${total.toLocaleString("en-IN")}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:620px;margin:0 auto;">
+          <h2 style="background:#16a34a;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">
+            Order Confirmed! 🎉
+          </h2>
+          <div style="background:white;padding:20px;border:1px solid #f0f0f0;border-radius:0 0 12px 12px;">
+            <p>Hi <strong>${addressData.first_name}</strong>, your order has been placed successfully!</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+              ${tableHeader(false)}
+              <tbody>${buildItemsTable(false)}</tbody>
+            </table>
+            <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
+            <p style="text-align:right;font-size:18px;font-weight:900;color:#16a34a;">
+              Total: Rs. ${total.toLocaleString("en-IN")}
+            </p>
+            <p style="background:#f4f4f5;padding:12px;border-radius:8px;">
+              <strong>Delivering to:</strong><br>
+              ${addressData.address}, ${addressData.city} — ${addressData.pin_code}<br>
+              ${addressData.phone}
+            </p>
+            <p style="color:#888;font-size:12px;text-align:center;margin-top:16px;">
+              Payment: Cash On Delivery
+            </p>
+          </div>
+        </div>`,
+    });
+
+    res.redirect(`/order-success?orderId=${order.id}`);
+  } catch (err) {
+    console.error("Checkout error:", err.message);
+    res.status(500).send("Checkout failed: " + err.message);
+  }
+});
+
+// ── Order success ─────────────────────────────────────────────
+app.get("/order-success", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const orderId = req.query.orderId || req.query.id;
+
+  if (!orderId) return res.redirect("/");
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("*, addresses(*), order_items(*)")
+    .eq("id", orderId)
+    .single();
+
+  if (!order) return res.redirect("/");
+
+  res.render("order-success", { order });
+});
+
+// ── Profile ───────────────────────────────────────────────────
 app.get("/profile", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
 
@@ -545,7 +908,6 @@ app.get("/profile", async (req, res) => {
   res.render("profile", { profile });
 });
 
-// POST Update Profile
 app.post("/profile/update", async (req, res) => {
   if (!req.session.user) return res.status(401).send("Unauthorized");
 
@@ -556,290 +918,44 @@ app.post("/profile/update", async (req, res) => {
     .update({ name, mobile })
     .eq("id", req.session.user.id);
 
-  if (error) {
-    return res.status(500).send("Update failed: " + error.message);
-  }
+  if (error) return res.status(500).send("Update failed: " + error.message);
 
-  // Update the session name so the header reflects the change immediately
   req.session.user.name = name;
-
   res.redirect("/profile");
 });
 
-app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const { imageUrl } = req.body;
-
-    // 1. Delete from Database
-    const { error: dbError } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", productId);
-
-    if (dbError) throw dbError;
-
-    // 2. Delete from Storage (if it's a Supabase URL)
-    if (imageUrl && imageUrl.includes("supabase.co")) {
-      // Extract the filename from the URL
-      const fileName = imageUrl.split("/").pop();
-
-      await supabase.storage.from("product-images").remove([fileName]);
-    }
-
-    res.status(200).json({ message: "Product deleted successfully" });
-  } catch (err) {
-    console.error("Delete Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/checkout", async (req, res) => {
-    if (!req.session.user) return res.redirect("/login");
-
-    const { data: addresses } = await supabase
-        .from("addresses")
-        .select("*")
-        .eq("user_id", req.session.user.id)
-        .order("created_at", { ascending: false });
-
-    const { data: cartData } = await supabase
-        .from("carts")
-        .select("*, products(id, name, image, brand, product_variants(id, price, weight, mrp))")
-        .eq("user_id", req.session.user.id);
-
-    const cartItems = (cartData || []).map(item => {
-        const product = item.products;
-        const firstVariant = product?.product_variants?.[0] || {};
-        return {
-            ...item,
-            price: firstVariant.price || 0,
-            weight: firstVariant.weight || "",
-            mrp: firstVariant.mrp || null,
-            product_name: product?.name || "",
-            product_image: product?.image || "",
-            product_brand: product?.brand || "",
-        };
-    });
-
-    const total = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-
-    res.render("checkout", {
-        addresses: addresses || [],
-        cartItems,
-        total,
-    });
-});
-
-app.post("/checkout", async (req, res) => {
+// ── My Orders ─────────────────────────────────────────────────
+app.get("/my-orders", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
 
-  const userId = req.session.user.id;
-  const {
-    first_name,
-    last_name,
-    address,
-    city,
-    pin_code,
-    selected_address,
-    email,
-    phone,
-  } = req.body;
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("*, addresses(*), order_items(*)")
+    .eq("user_id", req.session.user.id)
+    .order("created_at", { ascending: false });
 
-  try {
-    // 1. Resolve address
-    let addressId = selected_address;
-    let addressDetails;
-
-    if (!selected_address && first_name) {
-      const { data: newAddr } = await supabase
-        .from("addresses")
-        .insert([
-          {
-            user_id: userId,
-            first_name,
-            last_name,
-            phone,
-            address,
-            city,
-            pin_code,
-          },
-        ])
-        .select()
-        .single();
-      addressId = newAddr.id;
-      addressDetails = newAddr;
-    } else {
-      const { data, error } = await supabase
-        .from("addresses")
-        .select("*")
-        .eq("id", selected_address)
-        .single();
-
-      if (error || !data) {
-        console.error("Address fetch error:", error);
-        return res
-          .status(400)
-          .send("Could not find selected address. Please try again.");
-      }
-
-      addressDetails = data;
-      addressId = data.id;
-    }
-
-    // 2. Fetch cart items
-    const { data: cartItems } = await supabase
-      .from("carts")
-      .select("quantity, products (*)")
-      .eq("user_id", userId);
-
-    const total = cartItems.reduce(
-      (acc, item) => acc + item.products.price * item.quantity,
-      0,
-    );
-
-    // 3. Create order
-    const { data: order } = await supabase
-      .from("orders")
-      .insert([
-        {
-          user_id: userId,
-          address_id: addressId,
-          email,
-          phone,
-          total,
-          status: "pending",
-        },
-      ])
-      .select()
-      .single();
-
-    // 4. Save order items
-    const orderItems = cartItems.map((item) => ({
-      order_id: order.id,
-      product_id: item.products.id,
-      product_name: item.products.name,
-      product_image: item.products.image,
-      quantity: item.quantity,
-      price: item.products.price,
-    }));
-
-    await supabase.from("order_items").insert(orderItems);
-
-    // 5. Clear cart
-    await supabase.from("carts").delete().eq("user_id", userId);
-
-    // 6. Send email to admin
-    const itemRows = cartItems
-      .map(
-        (item) =>
-          `<tr>
-                <td style="padding:8px;border-bottom:1px solid #eee;">${item.products.name}</td>
-                <td style="padding:8px;border-bottom:1px solid #eee;">${item.quantity}</td>
-                <td style="padding:8px;border-bottom:1px solid #eee;">Rs. ${item.products.price * item.quantity}</td>
-            </tr>`,
-      )
-      .join("");
-
-    await transporter.sendMail({
-      from: "prajjwalj02@gmail.com",
-      to: "sahilcingh@gmail.com", // admin email
-      cc: "prajjwalj02@gmail.com",
-      subject: `🛒 New Order from ${addressDetails.first_name} ${addressDetails.last_name}`,
-      html: `
-                <div style="font-family:sans-serif;max-width:600px;margin:auto;">
-                    <h2 style="color:#16a34a;">New Order Received!</h2>
-                    <p><strong>Order ID:</strong> ${order.id}</p>
-                    <p><strong>Customer:</strong> ${addressDetails.first_name} ${addressDetails.last_name}</p>
-                    <p><strong>Phone:</strong> ${addressDetails.phone}</p>
-                    <p><strong>Email:</strong> ${email}</p>
-                    <p><strong>Address:</strong> ${addressDetails.address}, ${addressDetails.city} - ${addressDetails.pin_code}</p>
-                    <p><strong>Payment:</strong> Cash On Delivery</p>
-
-                    <h3 style="margin-top:24px;">Items Ordered</h3>
-                    <table style="width:100%;border-collapse:collapse;">
-                        <thead>
-                            <tr style="background:#f4f4f4;">
-                                <th style="padding:8px;text-align:left;">Product</th>
-                                <th style="padding:8px;text-align:left;">Qty</th>
-                                <th style="padding:8px;text-align:left;">Price</th>
-                            </tr>
-                        </thead>
-                        <tbody>${itemRows}</tbody>
-                    </table>
-
-                    <h3 style="margin-top:16px;color:#16a34a;">Total: Rs. ${total}</h3>
-                </div>
-            `,
-    });
-
-    await transporter.sendMail({
-    from: "prajwalj02@gmail.com",
-    to: email,                            // customer's email from the form
-    subject: `✅ Your GardenRich Order is Confirmed!`,
-    html: `
-        <div style="font-family:sans-serif;max-width:600px;margin:auto;">
-            <h2 style="color:#16a34a;">Thank you for your order, ${addressDetails.first_name}!</h2>
-            <p>We've received your order and will process it shortly.</p>
-
-            <h3 style="margin-top:24px;">Order Summary</h3>
-            <table style="width:100%;border-collapse:collapse;">
-                <thead>
-                    <tr style="background:#f4f4f4;">
-                        <th style="padding:8px;text-align:left;">Product</th>
-                        <th style="padding:8px;text-align:left;">Qty</th>
-                        <th style="padding:8px;text-align:left;">Price</th>
-                    </tr>
-                </thead>
-                <tbody>${itemRows}</tbody>
-            </table>
-            <h3 style="color:#16a34a;">Total: Rs. ${total}</h3>
-
-            <h3 style="margin-top:24px;">Delivering To</h3>
-            <p>${addressDetails.address}, ${addressDetails.city} - ${addressDetails.pin_code}</p>
-            <p><strong>Payment:</strong> Cash On Delivery</p>
-
-            <p style="margin-top:24px;color:#888;">
-                Questions? Reply to this email or call us at +91 9140104326
-            </p>
-        </div>
-    `,
+  res.render("my-orders", { orders: orders || [] });
 });
 
-    // 7. Redirect to success page
-    res.redirect(`/order-success?id=${order.id}`);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Something went wrong. Please try again.");
-  }
-});
-
-app.get("/order-success", async (req, res) => {
-  const { id } = req.query;
+app.get("/my-orders/:id", async (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
 
   const { data: order } = await supabase
     .from("orders")
     .select("*, addresses(*), order_items(*)")
-    .eq("id", id)
+    .eq("id", req.params.id)
+    .eq("user_id", req.session.user.id)
     .single();
 
-  res.render("order-success", { order });
+  if (!order) return res.status(404).send("Order not found.");
+
+  res.render("order-detail", { order });
 });
 
-app.get("/privacy", (req, res) => {
-  res.render("privacy");
-});
+// ── Static pages ──────────────────────────────────────────────
+app.get("/privacy", (req, res) => res.render("privacy"));
+app.get("/returns", (req, res) => res.render("refund"));
+app.get("/terms", (req, res) => res.render("terms"));
+app.get("/delivery", (req, res) => res.render("delivery"));
 
-app.get("/returns", (req, res) => {
-  res.render("refund");
-});
-
-app.get("/terms", (req, res) => {
-  res.render("terms");
-});
-
-app.get("/delivery", (req, res) => {
-  res.render("delivery");
-});
-
-app.listen(3000);
+app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));

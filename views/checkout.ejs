@@ -117,7 +117,7 @@
                     </div>
                 </div>
 
-                <button type="submit"
+                <button type="submit" id="placeOrderBtn"
                     class="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95 uppercase tracking-widest">
                     Place Order Now →
                 </button>
@@ -176,6 +176,37 @@
     </div>
 
     <%- include("partials/footer") %>
+    <script>
+    document.getElementById("checkoutForm").addEventListener("submit", function(e) {
+        const items = <%= cartItems.length %>;
+        if (items === 0) {
+            e.preventDefault();
+            alert("Your cart is empty. Please add items before checkout.");
+            window.location.href = "/";
+        }
+    });
+
+    function selectAddress(label) {
+        document.querySelectorAll('[name="selected_address"]').forEach(r => {
+            r.closest('label').classList.remove('border-green-600', 'bg-green-50');
+            r.closest('label').classList.add('border-zinc-200', 'bg-white');
+        });
+        label.classList.add('border-green-600', 'bg-green-50');
+        label.classList.remove('border-zinc-200', 'bg-white');
+    }
+
+    function showNewAddressForm() {
+        document.getElementById('newAddressForm').classList.remove('hidden');
+        document.getElementById('savedAddresses').classList.add('hidden');
+        document.getElementById('addNewBtn').classList.add('hidden');
+    }
+
+    function cancelNewAddress() {
+        document.getElementById('newAddressForm').classList.add('hidden');
+        document.getElementById('savedAddresses').classList.remove('hidden');
+        document.getElementById('addNewBtn').classList.remove('hidden');
+    }
+</script>
 </body>
 
 </html>

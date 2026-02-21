@@ -3,7 +3,11 @@ function showCounter(btn) {
   const productId = parent.getAttribute("data-id");
   const counter = parent.querySelector(".counter-control");
   const qtySpan = parent.querySelector(".qty-text");
+  const stock = parseInt(parent.getAttribute("data-stock") || "99");
 
+  if (stock === 0) return;
+
+  // Optimistically show counter
   btn.classList.add("hidden");
   counter.classList.remove("hidden");
   counter.classList.add("flex");
@@ -14,8 +18,23 @@ function showCounter(btn) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ productId }),
   })
-    .then((res) => res.json())
-    .then((data) => {
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) {
+        // Rollback UI — item is out of stock or error
+        counter.classList.add("hidden");
+        counter.classList.remove("flex");
+        btn.classList.remove("hidden");
+        // Update the card to show out of stock
+        parent.setAttribute("data-stock", "0");
+        const outOfStockBtn = parent.querySelector(".out-of-stock-btn");
+        if (outOfStockBtn) {
+          outOfStockBtn.classList.remove("hidden");
+          btn.classList.add("hidden");
+        }
+        showStockPopup(0);
+        return;
+      }
       const badge = document.getElementById("cartCount");
       if (badge) {
         badge.innerText = data.totalItems;
@@ -24,14 +43,26 @@ function showCounter(btn) {
         setTimeout(() => badge.classList.remove("scale-110"), 200);
       }
     })
-    .catch((err) => console.error("Cart add failed:", err));
+    .catch((err) => {
+      console.error("Cart add failed:", err);
+      // Rollback on network error
+      counter.classList.add("hidden");
+      counter.classList.remove("flex");
+      btn.classList.remove("hidden");
+    });
 }
 
 function updateQty(btn, change) {
   const parent = btn.closest(".product");
   const productId = parent.getAttribute("data-id");
   const qtySpan = parent.querySelector(".qty-text");
+  const stock = parseInt(parent.getAttribute("data-stock") || "99");
   let currentQty = parseInt(qtySpan.innerText);
+
+  if (change > 0 && currentQty >= stock) {
+    showStockPopup(stock);
+    return;
+  }
 
   currentQty += change;
 
@@ -47,13 +78,47 @@ function updateQty(btn, change) {
   updateCartOnServer(productId, currentQty);
 }
 
+function showStockPopup(stock) {
+  const existing = document.getElementById("stockPopup");
+  if (existing) existing.remove();
+
+  const msg = stock === 0
+    ? "This item is out of stock."
+    : `Only ${stock} item${stock === 1 ? "" : "s"} available in stock.`;
+
+  const popup = document.createElement("div");
+  popup.id = "stockPopup";
+  popup.className =
+    "fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-sm font-bold px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3";
+  popup.innerHTML = `
+    <svg class="w-5 h-5 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+    </svg>
+    ${msg}
+  `;
+  document.body.appendChild(popup);
+
+  setTimeout(() => {
+    popup.style.opacity = "0";
+    popup.style.transition = "opacity 0.3s ease";
+    setTimeout(() => popup.remove(), 300);
+  }, 2500);
+}
+
 function updateCartQty(btn, change) {
   const itemContainer = btn.closest("[data-price]");
   const productId = itemContainer.getAttribute("data-id");
   const qtySpan = itemContainer.querySelector(".qty-text");
   const price = parseFloat(itemContainer.getAttribute("data-price"));
+  const stock = parseInt(itemContainer.getAttribute("data-stock") || "99");
 
   let currentQty = parseInt(qtySpan.innerText);
+
+  if (change > 0 && currentQty >= stock) {
+    showStockPopup(stock);
+    return;
+  }
+
   currentQty += change;
 
   if (currentQty < 0) return;
@@ -70,16 +135,21 @@ function updateCartQty(btn, change) {
   } else {
     qtySpan.innerText = currentQty;
 
-    // Update this item's subtotal
     const subtotalEl = itemContainer.querySelector(".item-subtotal");
     if (subtotalEl) {
       subtotalEl.textContent =
         "Rs. " + (price * currentQty).toLocaleString("en-IN");
     }
 
-    // Update item summary line in order summary
+    const summaryQty = document.querySelector(
+      `#summary-row-${productId} .summary-item-qty`
+    );
+    if (summaryQty) {
+      summaryQty.textContent = "×" + currentQty;
+    }
+
     const summaryLine = document.querySelector(
-      `.summary-item-total[data-id="${productId}"]`,
+      `.summary-item-total[data-id="${productId}"]`
     );
     if (summaryLine) {
       summaryLine.textContent =
@@ -118,50 +188,6 @@ async function updateCartOnServer(productId, quantity) {
   }
 }
 
-function updateCartQty(btn, change) {
-  const itemContainer = btn.closest("[data-price]");
-  const productId = itemContainer.getAttribute("data-id");
-  const qtySpan = itemContainer.querySelector(".qty-text");
-  const price = parseFloat(itemContainer.getAttribute("data-price"));
-
-  let currentQty = parseInt(qtySpan.innerText);
-  currentQty += change;
-
-  if (currentQty < 0) return;
-
-  if (currentQty === 0) {
-    itemContainer.style.opacity = "0";
-    itemContainer.style.transform = "scale(0.95)";
-    itemContainer.style.transition = "all 0.2s ease";
-    setTimeout(() => {
-      itemContainer.remove();
-      updateOrderSummary();
-      checkEmptyCart();
-    }, 200);
-  } else {
-    qtySpan.innerText = currentQty;
-
-    // Update this item's subtotal
-    const subtotalEl = itemContainer.querySelector(".item-subtotal");
-    if (subtotalEl) {
-      subtotalEl.textContent =
-        "Rs. " + (price * currentQty).toLocaleString("en-IN");
-    }
-
-    // Update summary qty
-    const summaryQty = document.querySelector(
-      `#summary-row-${productId} .summary-item-qty`,
-    );
-    if (summaryQty) {
-      summaryQty.textContent = "×" + currentQty;
-    }
-
-    updateOrderSummary();
-  }
-
-  updateCartOnServer(productId, currentQty);
-}
-
 function updateOrderSummary() {
   let total = 0;
 
@@ -176,7 +202,7 @@ function updateOrderSummary() {
   const formatted = "Rs. " + total.toLocaleString("en-IN");
 
   const els = document.querySelectorAll(
-    "#summaryOrderTotal, #summaryFinalTotal, #cartTotal",
+    "#summaryOrderTotal, #summaryFinalTotal, #cartTotal"
   );
   els.forEach((el) => {
     if (el) el.innerText = formatted;
@@ -207,8 +233,26 @@ document.addEventListener("click", function (e) {
   }
 });
 
-async function deleteProduct(productId, imageUrl) {
-  if (!confirm("Are you sure you want to delete this product?")) return;
+// ── Delete modal ──────────────────────────────────────────────
+function confirmDelete(productId, imageUrl) {
+  document.getElementById("deleteProductId").value = productId;
+  document.getElementById("deleteImageUrl").value = imageUrl;
+  const modal = document.getElementById("deleteModal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+
+function closeDeleteModal() {
+  const modal = document.getElementById("deleteModal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+async function confirmDeleteAction() {
+  const productId = document.getElementById("deleteProductId").value;
+  const imageUrl = document.getElementById("deleteImageUrl").value;
+
+  closeDeleteModal();
 
   try {
     const response = await fetch(`/admin/delete-product/${productId}`, {
@@ -218,7 +262,13 @@ async function deleteProduct(productId, imageUrl) {
     });
 
     if (response.ok) {
-      document.querySelector(`[data-id="${productId}"]`).remove();
+      const card = document.querySelector(`[data-id="${productId}"]`);
+      if (card) {
+        card.style.opacity = "0";
+        card.style.transform = "scale(0.95)";
+        card.style.transition = "all 0.3s ease";
+        setTimeout(() => card.remove(), 300);
+      }
     } else {
       const errorData = await response.json();
       alert("Error: " + errorData.error);
@@ -229,18 +279,28 @@ async function deleteProduct(productId, imageUrl) {
   }
 }
 
-function openEditModal(id, name, price, weight, image, category) {
-  document.getElementById("editProductId").value = id;
+// ── Edit modal ────────────────────────────────────────────────
+function openEditModal(productId) {
+  // Read all data from the product card's data attributes — no inline JSON in onclick
+  const card = document.querySelector(`.product[data-id="${productId}"]`);
+  if (!card) { console.error("Card not found for id", productId); return; }
+
+  const name = card.getAttribute("data-name") || "";
+  const category = card.getAttribute("data-category") || "";
+  const variantsRaw = card.getAttribute("data-variants") || "[]";
+
+  let variants = [];
+  try { variants = JSON.parse(variantsRaw); } catch(e) { console.error("Variant parse error", e); }
+
+  document.getElementById("editProductId").value = productId;
   document.getElementById("editName").value = name;
-  document.getElementById("editPrice").value = price;
-  document.getElementById("editWeight").value = weight;
 
   const categorySelect = document.getElementById("editCategory");
-  if (categorySelect) categorySelect.value = category || "";
+  if (categorySelect) categorySelect.value = category;
 
   const preview = document.getElementById("editImagePreview");
-  preview.src = image;
-  preview.classList.remove("hidden");
+  preview.classList.add("hidden");
+  preview.src = "";
 
   const imageInput = document.getElementById("editImage");
   const newImageInput = imageInput.cloneNode(true);
@@ -252,6 +312,26 @@ function openEditModal(id, name, price, weight, image, category) {
       preview.classList.remove("hidden");
     }
   });
+
+  // Render variant stock inputs
+  const container = document.getElementById("editVariantStocks");
+  if (container) {
+    if (variants.length > 0) {
+      container.innerHTML = variants.map(v => `
+        <div class="flex items-center gap-3 bg-zinc-50 rounded-xl p-3">
+          <span class="text-sm font-bold text-zinc-700 flex-1">${v.weight}</span>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-zinc-400 font-bold">Stock</label>
+            <input type="number" value="${v.stock}" min="0" step="1"
+              data-variant-id="${v.id}"
+              class="variant-stock-input w-20 p-2 rounded-lg border border-zinc-200 text-sm font-bold text-center outline-none focus:border-green-500">
+          </div>
+        </div>
+      `).join("");
+    } else {
+      container.innerHTML = '<p class="text-xs text-zinc-400">No variants found</p>';
+    }
+  }
 
   const modal = document.getElementById("editModal");
   modal.classList.remove("hidden");
@@ -267,33 +347,99 @@ function closeEditModal() {
 async function submitEdit() {
   const id = document.getElementById("editProductId").value;
   const name = document.getElementById("editName").value;
-  const price = document.getElementById("editPrice").value;
-  const weight = document.getElementById("editWeight").value;
   const category = document.getElementById("editCategory").value;
   const imageFile = document.getElementById("editImage").files[0];
 
   const formData = new FormData();
   formData.append("name", name);
-  formData.append("price", price);
-  formData.append("weight", weight);
   formData.append("category", category);
   if (imageFile) formData.append("imageFile", imageFile);
 
-  const response = await fetch(`/admin/edit-product/${id}`, {
-    method: "POST",
-    body: formData,
+  // Append variant stock values
+  document.querySelectorAll(".variant-stock-input").forEach(input => {
+    formData.append("variantId[]", input.getAttribute("data-variant-id"));
+    formData.append("variantStock[]", input.value);
   });
 
-  const data = await response.json();
+  try {
+    const response = await fetch(`/admin/edit-product/${id}`, {
+      method: "POST",
+      body: formData,
+    });
 
-  if (response.ok) {
-    closeEditModal();
-    location.reload();
-  } else {
-    alert("Error: " + data.error);
+    const data = await response.json();
+
+    if (response.ok) {
+      closeEditModal();
+      location.reload();
+    } else {
+      alert("Error: " + data.error);
+    }
+  } catch (err) {
+    alert("Server communication error.");
+    console.error(err);
   }
 }
 
+// ── Variant change ────────────────────────────────────────────
+function onVariantChange(select) {
+  const card = select.closest(".product");
+  const selected = select.options[select.selectedIndex];
+
+  const price = selected.getAttribute("data-price");
+  const mrp = selected.getAttribute("data-mrp");
+  const stock = parseInt(selected.getAttribute("data-stock") || "0");
+
+  card.querySelector(".variant-price").textContent = `Rs. ${price}`;
+  card.setAttribute("data-price", price);
+  card.setAttribute("data-stock", stock);
+
+  const mrpEl = card.querySelector(".variant-mrp");
+  const discountEl = card.querySelector(".variant-discount");
+
+  if (mrp && parseFloat(mrp) > parseFloat(price)) {
+    if (mrpEl) {
+      mrpEl.textContent = `Rs. ${mrp}`;
+      mrpEl.classList.remove("hidden");
+    }
+    if (discountEl) {
+      const pct = Math.round(
+        ((parseFloat(mrp) - parseFloat(price)) / parseFloat(mrp)) * 100
+      );
+      discountEl.textContent = `${pct}% OFF`;
+      discountEl.classList.remove("hidden");
+    }
+  } else {
+    if (mrpEl) mrpEl.classList.add("hidden");
+    if (discountEl) discountEl.classList.add("hidden");
+  }
+
+  // Update add button / counter visibility based on new variant stock
+  const addBtn = card.querySelector(".add-btn");
+  const counter = card.querySelector(".counter-control");
+  const qtySpan = card.querySelector(".qty-text");
+  const outOfStockBtn = card.querySelector(".out-of-stock-btn");
+
+  if (outOfStockBtn) {
+    if (stock === 0) {
+      outOfStockBtn.classList.remove("hidden");
+      if (addBtn) addBtn.classList.add("hidden");
+    } else {
+      outOfStockBtn.classList.add("hidden");
+      if (addBtn) addBtn.classList.remove("hidden");
+    }
+  }
+
+  // Reset quantity counter when variant changes
+  if (counter && !counter.classList.contains("hidden")) {
+    counter.classList.add("hidden");
+    counter.classList.remove("flex");
+    if (addBtn) addBtn.classList.remove("hidden");
+    if (qtySpan) qtySpan.innerText = "1";
+  }
+}
+
+// ── Address helpers ───────────────────────────────────────────
 function selectAddress(label) {
   document.querySelectorAll('[name="selected_address"]').forEach((r) => {
     r.closest("label").classList.remove("border-green-600", "bg-green-50");
@@ -315,6 +461,7 @@ function cancelNewAddress() {
   document.getElementById("addNewBtn").classList.remove("hidden");
 }
 
+// ── Admin order status ────────────────────────────────────────
 async function updateStatus(orderId, select) {
   const status = select.value;
   const card = select.closest(".order-card");
@@ -364,41 +511,6 @@ function filterOrders(status) {
     "bg-white",
     "text-zinc-600",
     "border",
-    "border-zinc-200",
+    "border-zinc-200"
   );
-}
-
-function onVariantChange(select) {
-  const card = select.closest(".product");
-  const selected = select.options[select.selectedIndex];
-
-  const price = selected.getAttribute("data-price");
-  const mrp = selected.getAttribute("data-mrp");
-
-  // Update displayed price
-  card.querySelector(".variant-price").textContent = `Rs. ${price}`;
-
-  // Update data-price for cart calculations
-  card.setAttribute("data-price", price);
-
-  // Update MRP and discount if exists
-  const mrpEl = card.querySelector(".variant-mrp");
-  const discountEl = card.querySelector(".variant-discount");
-
-  if (mrp && parseFloat(mrp) > parseFloat(price)) {
-    if (mrpEl) {
-      mrpEl.textContent = `Rs. ${mrp}`;
-      mrpEl.classList.remove("hidden");
-    }
-    if (discountEl) {
-      const pct = Math.round(
-        ((parseFloat(mrp) - parseFloat(price)) / parseFloat(mrp)) * 100,
-      );
-      discountEl.textContent = `${pct}% OFF`;
-      discountEl.classList.remove("hidden");
-    }
-  } else {
-    if (mrpEl) mrpEl.classList.add("hidden");
-    if (discountEl) discountEl.classList.add("hidden");
-  }
 }
