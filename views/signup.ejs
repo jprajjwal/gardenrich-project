@@ -25,6 +25,15 @@
             <div class="bg-white/80 backdrop-blur-xl p-10 rounded-[2.5rem] shadow-2xl shadow-green-900/5 border border-white">
                 <form action="/signup" method="POST" class="space-y-5">
 
+                    <% if (error) { %>
+                    <div class="flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl text-sm font-medium">
+                        <svg class="w-5 h-5 shrink-0 mt-0.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                        <%= error %>
+                    </div>
+                    <% } %>
+
                     <div class="group">
                         <label class="block text-xs font-black uppercase tracking-widest text-zinc-400 mb-2 ml-1">Full Name</label>
                         <div class="relative">
@@ -54,7 +63,8 @@
                     <div class="group">
                         <label class="block text-xs font-black uppercase tracking-widest text-zinc-400 mb-2 ml-1">Mobile Number</label>
                         <div class="relative">
-                            <input type="tel" name="mobile" required pattern="[0-9]{10}" placeholder="+91" 
+                            <input type="tel" name="mobile" required placeholder="10-digit mobile number"
+                                pattern="[0-9]{10}" maxlength="10"
                                 class="w-full bg-zinc-50 border border-zinc-200 px-5 py-4 rounded-2xl outline-none transition-all focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/10 text-zinc-800 font-medium">
                             <div class="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-green-500 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,7 +77,7 @@
                     <div class="group">
                         <label class="block text-xs font-black uppercase tracking-widest text-zinc-400 mb-2 ml-1">Create Password</label>
                         <div class="relative">
-                            <input type="password" name="password" required minlength="6" placeholder="••••••••" 
+                            <input type="password" name="password" required minlength="6" placeholder="Min. 6 characters" 
                                 class="w-full bg-zinc-50 border border-zinc-200 px-5 py-4 rounded-2xl outline-none transition-all focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/10 text-zinc-800 font-medium">
                             <div class="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-green-500 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,7 +97,7 @@
                     <div class="flex-grow border-t border-zinc-100"></div>
                 </div>
                 <p class="text-center text-sm font-medium text-zinc-500">
-                    Already part of the gardenRich? 
+                    Already part of GardenRich? 
                     <a href="/login" class="font-black text-green-700 hover:text-green-800 transition-colors">Log in</a>
                 </p>
             </div>

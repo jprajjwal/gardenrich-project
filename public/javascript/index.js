@@ -1,4 +1,10 @@
 function showCounter(btn) {
+  // Redirect to login if not logged in
+  if (typeof IS_LOGGED_IN !== "undefined" && !IS_LOGGED_IN) {
+    window.location.href = "/login";
+    return;
+  }
+
   const parent = btn.closest(".product");
   const productId = parent.getAttribute("data-id");
   const counter = parent.querySelector(".counter-control");
@@ -281,7 +287,6 @@ async function confirmDeleteAction() {
 
 // ── Edit modal ────────────────────────────────────────────────
 function openEditModal(productId) {
-  // Read all data from the product card's data attributes — no inline JSON in onclick
   const card = document.querySelector(`.product[data-id="${productId}"]`);
   if (!card) { console.error("Card not found for id", productId); return; }
 
@@ -313,7 +318,6 @@ function openEditModal(productId) {
     }
   });
 
-  // Render variant stock inputs
   const container = document.getElementById("editVariantStocks");
   if (container) {
     if (variants.length > 0) {
@@ -355,7 +359,6 @@ async function submitEdit() {
   formData.append("category", category);
   if (imageFile) formData.append("imageFile", imageFile);
 
-  // Append variant stock values
   document.querySelectorAll(".variant-stock-input").forEach(input => {
     formData.append("variantId[]", input.getAttribute("data-variant-id"));
     formData.append("variantStock[]", input.value);
@@ -414,7 +417,6 @@ function onVariantChange(select) {
     if (discountEl) discountEl.classList.add("hidden");
   }
 
-  // Update add button / counter visibility based on new variant stock
   const addBtn = card.querySelector(".add-btn");
   const counter = card.querySelector(".counter-control");
   const qtySpan = card.querySelector(".qty-text");
@@ -430,7 +432,6 @@ function onVariantChange(select) {
     }
   }
 
-  // Reset quantity counter when variant changes
   if (counter && !counter.classList.contains("hidden")) {
     counter.classList.add("hidden");
     counter.classList.remove("flex");

@@ -30,7 +30,9 @@ app.use(
 
 const supabaseUrl = "https://cqdtrsmoqeszhdmippzx.supabase.co";
 const supabaseAnonKey = "sb_publishable_oCt8OHvgiR72BjjsIOkjbw_R386qFfY";
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || supabaseAnonKey;
+// SERVICE ROLE KEY — bypasses RLS, safe to use server-side only, never expose to browser
+// Get from: Supabase Dashboard → Project Settings → API → service_role
+const supabaseServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxZHRyc21vcWVzemhkbWlwcHp4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDM5NjE1OSwiZXhwIjoyMDg1OTcyMTU5fQ.y0LxiAGh-7BC-hfHRItwMq2gFTLqpQyf_DastYSZIBI"
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 app.set("view engine", "ejs");
@@ -55,11 +57,15 @@ app.use(async (req, res, next) => {
 });
 
 // ── Helper: enrich cart rows with product + variant data ─────
+// Does 3 separate queries instead of relying on Supabase FK joins,
+// which silently return null when foreign keys aren't registered.
 async function enrichCartItems(rawCart) {
   if (!rawCart || rawCart.length === 0) return [];
 
   const productIds = [...new Set(rawCart.map((r) => parseInt(r.product_id, 10)))].filter(Boolean);
 
+  // Fetch each product individually using .eq() — same pattern as the home page
+  // .in() with an anon key can be blocked by RLS policies that only allow row-by-row reads
   const productResults = await Promise.all(
     productIds.map((pid) =>
       supabase.from("products").select("id, name, image, brand").eq("id", pid).maybeSingle()
@@ -74,10 +80,11 @@ async function enrichCartItems(rawCart) {
         .eq("product_id", pid)
         .order("id", { ascending: true })
         .limit(1)
-        .maybeSingle()
+        .maybeSingle()   // won't error if no variant found
     )
   );
 
+  // Log any errors so you can see what's failing in the terminal
   productResults.forEach(({ error }, i) => {
     if (error) console.error(`Product fetch error for id ${productIds[i]}:`, error.message);
   });
@@ -115,9 +122,8 @@ async function enrichCartItems(rawCart) {
 
 // ── Home ──────────────────────────────────────────────────────
 app.get("/", async (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
+  // Prevent browser from caching the home page so stock levels are always fresh
+  res.set("Cache-Control", "no-store");
   try {
     const searchQuery = req.query.search;
     const activeCategory = req.query.category || "all";
@@ -164,58 +170,44 @@ app.get("/", async (req, res) => {
 });
 
 // ── Auth ──────────────────────────────────────────────────────
-app.get("/login", (req, res) => {
-  res.render("login", {
-    error: req.query.error || null,
-    email: req.query.email || "",
-  });
-});
+app.get("/login", (req, res) => res.render("login", { error: null, email: "" }));
 
-// FIX: was router.post (router undefined) — changed to app.post
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const renderErr = (errorCode) =>
+    res.render("login", { error: errorCode, email });
 
-    if (error) {
-      const msg = error.message.toLowerCase();
-      let errorCode = "unknown";
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (
-        msg.includes("invalid login credentials") ||
-        msg.includes("invalid email or password") ||
-        msg.includes("email not confirmed")
-      ) {
-        errorCode = "invalid_credentials";
-      } else if (msg.includes("user not found")) {
-        errorCode = "user_not_found";
-      } else if (msg.includes("disabled") || msg.includes("banned")) {
-        errorCode = "account_disabled";
-      }
-
-      return res.redirect(`/login?error=${errorCode}&email=${encodeURIComponent(email)}`);
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("invalid login") || msg.includes("invalid email or password") || msg.includes("email not confirmed")) {
+      return renderErr("invalid_credentials");
+    } else if (msg.includes("user not found")) {
+      return renderErr("user_not_found");
+    } else if (msg.includes("disabled") || msg.includes("banned")) {
+      return renderErr("account_disabled");
     }
-
-    // Fetch profile to get role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", data.user.id)
-      .single();
-
-    req.session.user = {
-      id: data.user.id,
-      email: data.user.email,
-      name: profile?.name || "",
-      role: profile?.role || "USER",
-    };
-
-    return res.redirect("/");
-  } catch (err) {
-    console.error("Login error:", err);
-    return res.redirect(`/login?error=unknown&email=${encodeURIComponent(email)}`);
+    return renderErr("unknown");
   }
+
+  const user = data.user;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("name, role")
+    .eq("id", user.id)
+    .single();
+
+  req.session.user = {
+    id: user.id,
+    email: user.email,
+    name: profile?.name || "User",
+    role: profile?.role || "USER",
+  };
+
+  res.redirect("/");
 });
 
 function isAdmin(req, res, next) {
@@ -225,39 +217,330 @@ function isAdmin(req, res, next) {
   next();
 }
 
-app.get("/signup", (req, res) => res.render("signup"));
+// ── OTP helper ───────────────────────────────────────────────
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+app.get("/signup", (req, res) => res.render("signup", { error: null }));
 
 app.post("/signup", async (req, res) => {
   const { name, email, password, mobile } = req.body;
+  const renderErr = (msg) => res.render("signup", { error: msg });
 
-  const { data, error } = await supabase.auth.signUp({ email, password });
-
-  if (error) {
-    console.error("Signup Error:", error.message);
-    return res.send("Signup failed: " + error.message);
+  // Validate all fields
+  if (!name?.trim() || !email?.trim() || !password?.trim() || !mobile?.trim()) {
+    return renderErr("All fields are required.");
+  }
+  if (!/^[0-9]{10}$/.test(mobile.trim())) {
+    return renderErr("Mobile number must be exactly 10 digits.");
   }
 
-  const user = data.user;
+  // Check mobile uniqueness against profiles table
+  const { data: existingMobile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("mobile", mobile.trim())
+    .maybeSingle();
+
+  if (existingMobile) {
+    return renderErr("This mobile number is already registered.");
+  }
+
+  // Check email uniqueness by attempting signUp first.
+  // Supabase silently accepts duplicate emails but returns user with empty identities[].
+  // We use this to detect duplicates BEFORE sending any OTP.
+  const { data: probeData, error: probeError } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: { data: { _probe: true } }, // mark as probe attempt
+  });
+
+  if (probeError) {
+    return renderErr("Signup failed: " + probeError.message);
+  }
+
+  // If identities array is empty, this email is already registered in Supabase Auth
+  if (!probeData.user || probeData.user.identities?.length === 0) {
+    return renderErr("This email is already registered. Please log in.");
+  }
+
+  // Email is fresh — but we need to delete this probe user before creating the real one
+  // Store the user id to clean up after OTP verification if needed
+  const probeUserId = probeData.user.id;
+
+  // Generate OTP and store pending signup in session (expires in 10 min)
+  const otp = generateOTP();
+  req.session.pendingSignup = {
+    name: name.trim(),
+    email: email.trim(),
+    password,
+    mobile: mobile.trim(),
+    otp,
+    probeUserId, // auth user already created — just needs profile on verify
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    attempts: 0,
+  };
+
+  // Send OTP email
+  try {
+    await transporter.sendMail({
+      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      to: email.trim(),
+      subject: "Your GardenRich Verification Code",
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
+          <div style="background:#16a34a;color:white;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
+            <h1 style="margin:0;font-size:24px;font-weight:900;">Garden<span style="color:#bbf7d0;">Rich</span></h1>
+          </div>
+          <div style="background:white;padding:32px;border:1px solid #f0f0f0;border-radius:0 0 16px 16px;text-align:center;">
+            <p style="color:#52525b;font-size:15px;margin-bottom:8px;">Hi <strong>${name.trim()}</strong>, use this code to verify your account:</p>
+            <div style="font-size:48px;font-weight:900;letter-spacing:12px;color:#18181b;padding:24px 0;">${otp}</div>
+            <p style="color:#a1a1aa;font-size:13px;">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+            <p style="color:#a1a1aa;font-size:12px;margin-top:16px;">If you didn't request this, you can ignore this email.</p>
+          </div>
+        </div>`,
+    });
+  } catch (emailErr) {
+    console.error("OTP email error:", emailErr.message);
+    return renderErr("Failed to send verification email. Please try again.");
+  }
+
+  res.render("verify-otp", { email: email.trim(), error: null });
+});
+
+// ── OTP verification ──────────────────────────────────────────
+app.post("/verify-otp", async (req, res) => {
+  const { otp } = req.body;
+  const pending = req.session.pendingSignup;
+
+  const renderVerify = (err) =>
+    res.render("verify-otp", { email: pending?.email || "", error: err });
+
+  if (!pending) {
+    return res.render("verify-otp", { email: "", error: "Session expired. Please sign up again." });
+  }
+
+  // Check expiry
+  if (Date.now() > pending.expiresAt) {
+    delete req.session.pendingSignup;
+    return res.render("signup", { error: "OTP expired. Please sign up again." });
+  }
+
+  // Max 5 attempts
+  pending.attempts += 1;
+  if (pending.attempts > 5) {
+    delete req.session.pendingSignup;
+    return res.render("signup", { error: "Too many incorrect attempts. Please sign up again." });
+  }
+
+  if (otp.trim() !== pending.otp) {
+    return renderVerify(`Incorrect code. ${5 - pending.attempts + 1} attempt${5 - pending.attempts + 1 === 1 ? "" : "s"} remaining.`);
+  }
+
+  // OTP correct — account was already created as a probe during signup validation.
+  // We just need to insert the profile record using the stored userId.
+  const { name, email, mobile, probeUserId } = pending;
 
   const { error: profileError } = await supabase.from("profiles").insert([
-    { id: user.id, name, email, mobile },
+    { id: probeUserId, name, email, mobile },
   ]);
 
-  if (profileError) console.error("Profile Error:", profileError.message);
+  if (profileError) {
+    console.error("Profile Error:", profileError.message);
+  }
+
+  delete req.session.pendingSignup;
 
   req.session.user = {
-    id: user.id,
-    email: user.email,
-    name: name,
+    id: probeUserId,
+    email,
+    name,
     role: "USER",
   };
 
   res.redirect("/");
 });
 
+// Resend OTP
+app.post("/resend-otp", async (req, res) => {
+  const pending = req.session.pendingSignup;
+
+  if (!pending) {
+    return res.render("signup", { error: "Session expired. Please sign up again." });
+  }
+
+  // Refresh OTP and expiry
+  const newOtp = generateOTP();
+  pending.otp = newOtp;
+  pending.expiresAt = Date.now() + 10 * 60 * 1000;
+  pending.attempts = 0;
+
+  try {
+    await transporter.sendMail({
+      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      to: pending.email,
+      subject: "Your New GardenRich Verification Code",
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
+          <div style="background:#16a34a;color:white;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
+            <h1 style="margin:0;font-size:24px;font-weight:900;">Garden<span style="color:#bbf7d0;">Rich</span></h1>
+          </div>
+          <div style="background:white;padding:32px;border:1px solid #f0f0f0;border-radius:0 0 16px 16px;text-align:center;">
+            <p style="color:#52525b;font-size:15px;margin-bottom:8px;">Your new verification code:</p>
+            <div style="font-size:48px;font-weight:900;letter-spacing:12px;color:#18181b;padding:24px 0;">${newOtp}</div>
+            <p style="color:#a1a1aa;font-size:13px;">This code expires in <strong>10 minutes</strong>.</p>
+          </div>
+        </div>`,
+    });
+  } catch (e) {
+    return res.render("verify-otp", { email: pending.email, error: "Failed to resend. Please try again." });
+  }
+
+  res.render("verify-otp", { email: pending.email, error: null, resent: true });
+});
+
 app.get("/logout", (req, res) => {
   req.session.destroy();
   res.redirect("/login");
+});
+
+// ── Forgot Password ───────────────────────────────────────────
+app.get("/forgot-password", (req, res) =>
+  res.render("forgot-password", { error: null, success: null })
+);
+
+app.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  const renderErr = (msg) => res.render("forgot-password", { error: msg, success: null });
+
+  if (!email?.trim()) return renderErr("Please enter your email address.");
+
+  // Check if email exists in profiles
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("email", email.trim())
+    .maybeSingle();
+
+  // Always show success message even if email not found (security best practice)
+  // But only send OTP if account actually exists
+  if (profile) {
+    const otp = generateOTP();
+    req.session.passwordReset = {
+      email: email.trim(),
+      otp,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      attempts: 0,
+    };
+
+    try {
+      await transporter.sendMail({
+        from: '"GardenRich" <prajjwalj02@gmail.com>',
+        to: email.trim(),
+        subject: "Reset Your GardenRich Password",
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
+            <div style="background:#16a34a;color:white;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
+              <h1 style="margin:0;font-size:24px;font-weight:900;">Garden<span style="color:#bbf7d0;">Rich</span></h1>
+            </div>
+            <div style="background:white;padding:32px;border:1px solid #f0f0f0;border-radius:0 0 16px 16px;text-align:center;">
+              <p style="color:#52525b;font-size:15px;margin-bottom:8px;">Use this code to reset your password:</p>
+              <div style="font-size:48px;font-weight:900;letter-spacing:12px;color:#18181b;padding:24px 0;">${otp}</div>
+              <p style="color:#a1a1aa;font-size:13px;">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+              <p style="color:#a1a1aa;font-size:12px;margin-top:16px;">If you didn't request this, you can safely ignore this email.</p>
+            </div>
+          </div>`,
+      });
+    } catch (e) {
+      console.error("Password reset email error:", e.message);
+      return renderErr("Failed to send reset email. Please try again.");
+    }
+  }
+
+  res.render("forgot-password", {
+    error: null,
+    success: "If an account exists for that email, a reset code has been sent.",
+  });
+});
+
+// ── Reset Password (OTP verify + new password) ────────────────
+app.get("/reset-password", (req, res) => {
+  if (!req.session.passwordReset) return res.redirect("/forgot-password");
+  res.render("reset-password", {
+    email: req.session.passwordReset.email,
+    error: null,
+  });
+});
+
+app.post("/reset-password", async (req, res) => {
+  const { otp, password, confirmPassword } = req.body;
+  const pending = req.session.passwordReset;
+
+  const renderErr = (msg) =>
+    res.render("reset-password", { email: pending?.email || "", error: msg });
+
+  if (!pending) return res.redirect("/forgot-password");
+
+  if (Date.now() > pending.expiresAt) {
+    delete req.session.passwordReset;
+    return res.render("forgot-password", {
+      error: "Reset code expired. Please request a new one.",
+      success: null,
+    });
+  }
+
+  pending.attempts += 1;
+  if (pending.attempts > 5) {
+    delete req.session.passwordReset;
+    return res.render("forgot-password", {
+      error: "Too many incorrect attempts. Please request a new code.",
+      success: null,
+    });
+  }
+
+  if (otp.trim() !== pending.otp) {
+    return renderErr(`Incorrect code. ${6 - pending.attempts} attempt${6 - pending.attempts === 1 ? "" : "s"} remaining.`);
+  }
+
+  if (!password || password.length < 6) {
+    return renderErr("Password must be at least 6 characters.");
+  }
+
+  if (password !== confirmPassword) {
+    return renderErr("Passwords do not match.");
+  }
+
+  // Update password via Supabase Admin using service key
+  // First look up the user's auth ID
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("email", pending.email)
+    .maybeSingle();
+
+  if (!profile) {
+    delete req.session.passwordReset;
+    return res.redirect("/forgot-password");
+  }
+
+  // Use Supabase auth admin to update password
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(profile.id, {
+    password,
+  });
+
+  if (updateErr) {
+    console.error("Password update error:", updateErr.message);
+    return renderErr("Failed to update password. Please try again.");
+  }
+
+  delete req.session.passwordReset;
+
+  res.render("login", {
+    error: null,
+    email: pending.email,
+    success: "Password updated successfully! Please log in.",
+  });
 });
 
 // ── Admin ─────────────────────────────────────────────────────
@@ -377,6 +660,8 @@ app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (
 
     if (error) throw error;
 
+    // ── Update variant stock if provided ──────────────────────
+    // Body may contain variantId[] and variantStock[] arrays
     const rawVariantIds = req.body["variantId[]"] || req.body.variantId;
     const rawVariantStocks = req.body["variantStock[]"] || req.body.variantStock;
 
@@ -391,6 +676,7 @@ app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (
           const variantId = parseInt(vid, 10);
           console.log(`Updating variant ${variantId} stock → ${newStock}`);
 
+          // Try RPC first (SECURITY DEFINER bypasses RLS)
           const { error: rpcErr } = await supabase.rpc("update_variant_stock", {
             p_variant_id: variantId,
             p_new_stock: newStock,
@@ -398,6 +684,7 @@ app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (
 
           if (rpcErr) {
             console.error(`RPC failed for variant ${variantId}: ${rpcErr.message} — trying direct update`);
+            // Fallback: direct update (works if RLS allows or service key is set)
             const { error: directErr } = await supabase
               .from("product_variants")
               .update({ stock: newStock })
@@ -514,6 +801,7 @@ app.post("/cart/add", async (req, res) => {
 
   const stock = variants?.[0]?.stock !== undefined ? variants[0].stock : 99;
 
+  // Reject if out of stock
   if (stock === 0) {
     return res.status(400).json({ error: "Out of stock", stock: 0 });
   }
@@ -632,6 +920,7 @@ app.post("/checkout", async (req, res) => {
 
     const cartItems = await enrichCartItems(rawCart);
 
+    // ── Stock validation — prevent overselling ────────────────
     const stockErrors = cartItems.filter((item) => item.stock < item.quantity);
     if (stockErrors.length > 0) {
       const msgs = stockErrors
@@ -661,6 +950,7 @@ app.post("/checkout", async (req, res) => {
       email,
     } = req.body;
 
+    // Resolve address
     let addressId;
     if (selected_address) {
       addressId = selected_address;
@@ -715,8 +1005,16 @@ app.post("/checkout", async (req, res) => {
 
     await supabase.from("order_items").insert(orderItems);
 
+    // ── Decrement stock for each variant ordered ──────────────
+    // Uses a SECURITY DEFINER Postgres function to bypass RLS on UPDATE
+    // Run this SQL in Supabase SQL Editor first:
+    //   CREATE OR REPLACE FUNCTION update_variant_stock(p_variant_id bigint, p_new_stock integer)
+    //   RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+    //   BEGIN UPDATE product_variants SET stock = p_new_stock WHERE id = p_variant_id; END; $$;
+    //   GRANT EXECUTE ON FUNCTION update_variant_stock(bigint, integer) TO anon, authenticated;
     await Promise.all(
       cartItems.map(async (item) => {
+        // Resolve variant id
         let variantId = item.variant_id;
         if (!variantId) {
           const { data: vLookup } = await supabase
@@ -733,6 +1031,7 @@ app.post("/checkout", async (req, res) => {
           variantId = vLookup.id;
         }
 
+        // Read current stock
         const { data: vData, error: vErr } = await supabase
           .from("product_variants")
           .select("stock")
@@ -745,33 +1044,24 @@ app.post("/checkout", async (req, res) => {
         }
 
         const newStock = Math.max(0, vData.stock - item.quantity);
-        console.log(`Stock decrement: variant ${variantId}: ${vData.stock} → ${newStock}`);
+        console.log(`Stock: variant ${variantId}: ${vData.stock} → ${newStock}`);
 
-        // Try RPC first
+        // Call SECURITY DEFINER function — bypasses RLS UPDATE restriction
         const { error: fnErr } = await supabase.rpc("update_variant_stock", {
           p_variant_id: variantId,
           p_new_stock: newStock,
         });
 
         if (fnErr) {
-          console.warn(`RPC failed for variant ${variantId}: ${fnErr.message} — using direct update`);
-          // Direct update fallback — works when service key is set
-          const { error: directErr } = await supabase
-            .from("product_variants")
-            .update({ stock: newStock })
-            .eq("id", variantId);
-
-          if (directErr) {
-            console.error(`Direct stock update ALSO failed for variant ${variantId}: ${directErr.message}`);
-          } else {
-            console.log(`Direct stock update succeeded for variant ${variantId} → ${newStock}`);
-          }
+          console.error(`update_variant_stock failed for variant ${variantId}:`, fnErr.message);
         }
       })
     );
 
     await supabase.from("carts").delete().eq("user_id", req.session.user.id);
 
+    // ── Email helpers ─────────────────────────────────────────
+    // FIX: use item.price * item.quantity for per-line total; show unit price too
     const buildItemsTable = (showUnitPrice) =>
       cartItems
         .map(
@@ -803,6 +1093,7 @@ app.post("/checkout", async (req, res) => {
         </tr>
       </thead>`;
 
+    // Admin email
     await transporter.sendMail({
       from: '"GardenRich Orders" <prajjwalj02@gmail.com>',
       to: "sahilcingh@gmail.com",
@@ -834,6 +1125,7 @@ app.post("/checkout", async (req, res) => {
         </div>`,
     });
 
+    // Customer confirmation email
     await transporter.sendMail({
       from: '"GardenRich" <prajjwalj02@gmail.com>',
       to: email,
@@ -865,6 +1157,7 @@ app.post("/checkout", async (req, res) => {
         </div>`,
     });
 
+    // FIX: use order.id (not orderId which was never declared)
     res.redirect(`/order-success?orderId=${order.id}`);
   } catch (err) {
     console.error("Checkout error:", err.message);
@@ -873,6 +1166,7 @@ app.post("/checkout", async (req, res) => {
 });
 
 // ── Order success ─────────────────────────────────────────────
+// FIX: was reading req.query.id but redirect sends orderId
 app.get("/order-success", async (req, res) => {
   res.set("Cache-Control", "no-store");
   const orderId = req.query.orderId || req.query.id;

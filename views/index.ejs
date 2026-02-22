@@ -144,7 +144,7 @@
                                 <h3 class="text-base font-bold text-zinc-800 leading-tight"><%= product.name %></h3>
                             </div>
 
-                            <!-- Variant selector -->
+                            <!-- Variant selector — weight only, no price in dropdown -->
                             <% if (variants.length > 0) { %>
                             <div class="relative mb-3">
                                 <select class="variant-select w-full bg-zinc-50 border border-zinc-200 p-2.5 pr-8 rounded-xl text-sm font-bold text-zinc-700 focus:outline-none focus:border-green-500 cursor-pointer appearance-none transition-all"
@@ -190,29 +190,26 @@
                                     <% } %>
                                 </div>
 
-                                <!-- Cart Controls: hidden entirely for ADMIN -->
                                 <div class="quantity-controls flex items-center">
                                     <% if (isOutOfStock) { %>
-                                        <button disabled class="out-of-stock-btn bg-zinc-200 text-zinc-400 px-4 py-2.5 rounded-xl text-xs font-bold cursor-not-allowed">
-                                            Out of Stock
-                                        </button>
-                                    <% } else if (user && user.role === 'ADMIN') { %>
-                                        <!-- Admin: no cart controls shown -->
+                                    <button disabled class="out-of-stock-btn bg-zinc-200 text-zinc-400 px-4 py-2.5 rounded-xl text-xs font-bold cursor-not-allowed">
+                                        Out of Stock
+                                    </button>
                                     <% } else { %>
-                                        <button disabled class="out-of-stock-btn hidden bg-zinc-200 text-zinc-400 px-4 py-2.5 rounded-xl text-xs font-bold cursor-not-allowed">
-                                            Out of Stock
-                                        </button>
-                                        <button onclick="showCounter(this)"
-                                            class="add-btn bg-zinc-900 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-zinc-200 active:scale-95 <%= qtyInCart > 0 ? 'hidden' : '' %>">
-                                            ADD
-                                        </button>
-                                        <div class="counter-control <%= qtyInCart > 0 ? 'flex' : 'hidden' %> items-center bg-zinc-900 text-white rounded-xl overflow-hidden shadow-lg shadow-zinc-200 transition-all">
-                                            <button onclick="updateQty(this, -1)"
-                                                class="px-3 py-2.5 hover:bg-zinc-800 text-sm font-bold transition-colors leading-none">-</button>
-                                            <span class="qty-text px-2 py-2.5 font-bold text-xs w-8 text-center leading-none"><%= qtyInCart > 0 ? qtyInCart : 1 %></span>
-                                            <button onclick="updateQty(this, 1)"
-                                                class="px-3 py-2.5 hover:bg-zinc-800 text-sm font-bold transition-colors leading-none">+</button>
-                                        </div>
+                                    <button disabled class="out-of-stock-btn hidden bg-zinc-200 text-zinc-400 px-4 py-2.5 rounded-xl text-xs font-bold cursor-not-allowed">
+                                        Out of Stock
+                                    </button>
+                                    <button onclick="showCounter(this)"
+                                        class="add-btn bg-zinc-900 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-zinc-200 active:scale-95 <%= qtyInCart > 0 ? 'hidden' : '' %>">
+                                        ADD
+                                    </button>
+                                    <div class="counter-control <%= qtyInCart > 0 ? 'flex' : 'hidden' %> items-center bg-zinc-900 text-white rounded-xl overflow-hidden shadow-lg shadow-zinc-200 transition-all">
+                                        <button onclick="updateQty(this, -1)"
+                                            class="px-3 py-2.5 hover:bg-zinc-800 text-sm font-bold transition-colors leading-none">-</button>
+                                        <span class="qty-text px-2 py-2.5 font-bold text-xs w-8 text-center leading-none"><%= qtyInCart > 0 ? qtyInCart : 1 %></span>
+                                        <button onclick="updateQty(this, 1)"
+                                            class="px-3 py-2.5 hover:bg-zinc-800 text-sm font-bold transition-colors leading-none">+</button>
+                                    </div>
                                     <% } %>
                                 </div>
                             </div>
@@ -306,6 +303,9 @@
         </div>
     </div>
 
+    <script>
+        const IS_LOGGED_IN = <%= user ? 'true' : 'false' %>;
+    </script>
     <script src="/javascript/index.js"></script>
     <%- include("partials/footer") %>
 </body>
