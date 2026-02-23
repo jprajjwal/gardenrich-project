@@ -1,3 +1,5 @@
+require("dotenv").config();
+require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const { createClient } = require("@supabase/supabase-js");
@@ -10,8 +12,8 @@ const nodemailer = require("nodemailer");
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "prajjwalj02@gmail.com",
-    pass: "iwxedcnijtuvtuzr",
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -21,19 +23,25 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.use(
   session({
-    secret: "gardenrich-secret-key",
+    secret: process.env.SESSION_SECRET || "gardenrich-secret-key",
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false },
   })
 );
 
-const supabaseUrl = "https://cqdtrsmoqeszhdmippzx.supabase.co";
-const supabaseAnonKey = "sb_publishable_oCt8OHvgiR72BjjsIOkjbw_R386qFfY";
-// SERVICE ROLE KEY — bypasses RLS, safe to use server-side only, never expose to browser
-// Get from: Supabase Dashboard → Project Settings → API → service_role
-const supabaseServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxZHRyc21vcWVzemhkbWlwcHp4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDM5NjE1OSwiZXhwIjoyMDg1OTcyMTU5fQ.y0LxiAGh-7BC-hfHRItwMq2gFTLqpQyf_DastYSZIBI"
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || supabaseAnonKey;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// Dedicated admin client for auth.admin calls (password reset, etc.)
+// Requires SUPABASE_SERVICE_KEY — get from Supabase Dashboard → Project Settings → API → service_role
+const supabaseAdmin = process.env.SUPABASE_SERVICE_KEY
+  ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;
 
 app.set("view engine", "ejs");
 
@@ -285,7 +293,7 @@ app.post("/signup", async (req, res) => {
   // Send OTP email
   try {
     await transporter.sendMail({
-      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      from: `"GardenRich" <${process.env.EMAIL_USER}>`,
       to: email.trim(),
       subject: "Your GardenRich Verification Code",
       html: `
@@ -378,7 +386,7 @@ app.post("/resend-otp", async (req, res) => {
 
   try {
     await transporter.sendMail({
-      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      from: `"GardenRich" <${process.env.EMAIL_USER}>`,
       to: pending.email,
       subject: "Your New GardenRich Verification Code",
       html: `
@@ -436,7 +444,7 @@ app.post("/forgot-password", async (req, res) => {
 
     try {
       await transporter.sendMail({
-        from: '"GardenRich" <prajjwalj02@gmail.com>',
+        from: `"GardenRich" <${process.env.EMAIL_USER}>`,
         to: email.trim(),
         subject: "Reset Your GardenRich Password",
         html: `
@@ -511,8 +519,7 @@ app.post("/reset-password", async (req, res) => {
     return renderErr("Passwords do not match.");
   }
 
-  // Update password via Supabase Admin using service key
-  // First look up the user's auth ID
+  // Look up user's auth ID from profiles
   const { data: profile } = await supabase
     .from("profiles")
     .select("id")
@@ -524,8 +531,16 @@ app.post("/reset-password", async (req, res) => {
     return res.redirect("/forgot-password");
   }
 
-  // Use Supabase auth admin to update password
-  const { error: updateErr } = await supabase.auth.admin.updateUserById(profile.id, {
+  // Requires supabaseAdmin (service role key).
+  // If not configured, guide the user to set it up.
+  if (!supabaseAdmin) {
+    console.error("Password reset requires SUPABASE_SERVICE_KEY env variable.");
+    return renderErr(
+      "Password reset is not configured yet. Please contact support or set the SUPABASE_SERVICE_KEY."
+    );
+  }
+
+  const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(profile.id, {
     password,
   });
 
@@ -545,8 +560,7 @@ app.post("/reset-password", async (req, res) => {
 
 // ── Admin ─────────────────────────────────────────────────────
 app.get("/admin", isAdmin, async (req, res) => {
-  const { data: categories } = await supabase.from("categories").select("*");
-  res.render("admin", { categories: categories || [] });
+    res.redirect("/admin/dashboard");
 });
 
 app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
@@ -629,77 +643,210 @@ app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, 
   }
 });
 
+// GET variants for edit modal
+app.get("/admin/product-variants/:productId", isAdmin, async (req, res) => {
+    try {
+        const { data: variants, error } = await supabase
+            .from("product_variants")
+            .select("id, weight, price, mrp, stock")
+            .eq("product_id", req.params.productId)
+            .order("id", { ascending: true });
+
+        if (error) throw error;
+        res.json({ variants: variants || [] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (req, res) => {
-  try {
-    const productId = parseInt(req.params.id);
-    const { name, category } = req.body;
+    try {
+        const productId = parseInt(req.params.id);
+        const { name, category, variantUpdates, newVariants, deleteVariants } = req.body;
 
-    let updateData = { name, category };
+        let updateData = { name, category };
 
-    if (req.file) {
-      const fileName = `${Date.now()}-${req.file.originalname}`;
-      const { error: uploadError } = await supabase.storage
-        .from("product-images")
-        .upload(fileName, req.file.buffer, {
-          contentType: req.file.mimetype,
-          upsert: false,
-        });
-      if (uploadError) throw uploadError;
+        // Optional image upload
+        if (req.file) {
+            const fileName = `${Date.now()}-${req.file.originalname}`;
+            const { error: uploadError } = await supabase.storage
+                .from("product-images")
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false,
+                });
+            if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage
-        .from("product-images")
-        .getPublicUrl(fileName);
+            const { data: urlData } = supabase.storage
+                .from("product-images")
+                .getPublicUrl(fileName);
+            updateData.image = urlData.publicUrl;
+        }
 
-      updateData.image = urlData.publicUrl;
+        // Update product
+        const { error: productError } = await supabase
+            .from("products")
+            .update(updateData)
+            .eq("id", productId);
+        if (productError) throw productError;
+
+        // Update existing variants
+        if (variantUpdates) {
+            const updates = JSON.parse(variantUpdates);
+            for (const v of updates) {
+                const { error } = await supabase
+                    .from("product_variants")
+                    .update({
+                        price: v.price,
+                        mrp: v.mrp,
+                        stock: v.stock,
+                    })
+                    .eq("id", parseInt(v.id));
+                if (error) throw error;
+            }
+        }
+
+        // Insert new variants
+        if (newVariants) {
+            const toInsert = JSON.parse(newVariants);
+            if (toInsert.length > 0) {
+                const inserts = toInsert.map(v => ({
+                    product_id: productId,
+                    weight: v.weight,
+                    price: v.price,
+                    mrp: v.mrp,
+                    stock: v.stock,
+                }));
+                const { error } = await supabase
+                    .from("product_variants")
+                    .insert(inserts);
+                if (error) throw error;
+            }
+        }
+
+        // Delete removed variants
+        if (deleteVariants) {
+            const toDelete = JSON.parse(deleteVariants);
+            if (toDelete.length > 0) {
+                const { error } = await supabase
+                    .from("product_variants")
+                    .delete()
+                    .in("id", toDelete.map(id => parseInt(id)));
+                if (error) throw error;
+            }
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Edit Product Error:", err.message);
+        res.status(500).json({ error: err.message });
     }
+});
 
-    const { error } = await supabase
-      .from("products")
-      .update(updateData)
-      .eq("id", productId);
+// GET dashboard
+app.get("/admin/dashboard", isAdmin, async (req, res) => {
+    const { data: categories } = await supabase
+        .from("categories")
+        .select("*")
+        .order("id", { ascending: true });
+    res.render("admin-dashboard", { categories: categories || [] });
+});
 
-    if (error) throw error;
-
-    // ── Update variant stock if provided ──────────────────────
-    // Body may contain variantId[] and variantStock[] arrays
-    const rawVariantIds = req.body["variantId[]"] || req.body.variantId;
-    const rawVariantStocks = req.body["variantStock[]"] || req.body.variantStock;
-
-    if (rawVariantIds && rawVariantStocks) {
-      const variantIds = Array.isArray(rawVariantIds) ? rawVariantIds : [rawVariantIds];
-      const variantStocks = Array.isArray(rawVariantStocks) ? rawVariantStocks : [rawVariantStocks];
-
-      await Promise.all(
-        variantIds.map(async (vid, i) => {
-          const newStock = parseInt(variantStocks[i], 10);
-          if (isNaN(newStock) || newStock < 0) return;
-          const variantId = parseInt(vid, 10);
-          console.log(`Updating variant ${variantId} stock → ${newStock}`);
-
-          // Try RPC first (SECURITY DEFINER bypasses RLS)
-          const { error: rpcErr } = await supabase.rpc("update_variant_stock", {
-            p_variant_id: variantId,
-            p_new_stock: newStock,
-          });
-
-          if (rpcErr) {
-            console.error(`RPC failed for variant ${variantId}: ${rpcErr.message} — trying direct update`);
-            // Fallback: direct update (works if RLS allows or service key is set)
-            const { error: directErr } = await supabase
-              .from("product_variants")
-              .update({ stock: newStock })
-              .eq("id", variantId);
-            if (directErr) console.error(`Direct update also failed: ${directErr.message}`);
-          }
-        })
-      );
+// Category counts
+app.get("/admin/categories/counts", isAdmin, async (req, res) => {
+    try {
+        const { data: categories } = await supabase.from("categories").select("id, slug");
+        const counts = {};
+        for (const cat of categories || []) {
+            const { count } = await supabase
+                .from("products")
+                .select("*", { count: "exact", head: true })
+                .eq("category", cat.slug);
+            counts[cat.id] = count || 0;
+        }
+        res.json({ counts });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
+});
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Edit Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
+// Add category — slug auto-generated from name
+app.post("/admin/categories/add", isAdmin, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: "Category name is required." });
+
+        // Auto generate slug from name
+        const slug = name.toLowerCase().trim()
+            .replace(/[^a-z0-9\s-]/g, "")
+            .replace(/\s+/g, "-")
+            .replace(/-+/g, "-");
+
+        // Check duplicate
+        const { data: existing } = await supabase
+            .from("categories")
+            .select("id")
+            .eq("slug", slug)
+            .single();
+
+        if (existing) return res.status(400).json({ error: `Category "${name}" already exists.` });
+
+        const { data, error } = await supabase
+            .from("categories")
+            .insert([{ name: name.trim(), slug }])
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, category: data });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Rename category
+app.post("/admin/categories/rename/:id", isAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: "Name is required." });
+
+        const { error } = await supabase
+            .from("categories")
+            .update({ name: name.trim() })
+            .eq("id", id);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete category
+app.delete("/admin/categories/:id", isAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+
+        const { data: cat } = await supabase
+            .from("categories")
+            .select("slug, name")
+            .eq("id", id)
+            .single();
+
+        if (!cat) return res.status(404).json({ error: "Category not found." });
+        if (cat.slug === "all") return res.status(400).json({ error: "Cannot delete 'All Products'." });
+
+        // Move products to 'all'
+        await supabase.from("products").update({ category: "all" }).eq("category", cat.slug);
+
+        const { error } = await supabase.from("categories").delete().eq("id", id);
+        if (error) throw error;
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
@@ -771,6 +918,33 @@ app.post("/admin/orders/update-status", isAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
+// ── Admin: Shipping Settings ──────────────────────────────────
+app.post("/admin/settings/shipping", isAdmin, async (req, res) => {
+  const cost = parseFloat(req.body.shipping_cost);
+  if (isNaN(cost) || cost < 0) {
+    return res.status(400).json({ error: "Invalid shipping cost." });
+  }
+
+  // Upsert — insert if not exists, update if exists
+  const { error } = await supabase
+    .from("settings")
+    .upsert({ key: "shipping_cost", value: cost.toString() }, { onConflict: "key" });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, shippingCost: cost });
+});
+
+app.get("/admin/settings", isAdmin, async (req, res) => {
+  const { data: shippingSetting } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "shipping_cost")
+    .maybeSingle();
+
+  const shippingCost = shippingSetting ? parseFloat(shippingSetting.value) : 0;
+  res.render("admin-settings", { shippingCost });
+});
+
 // ── Cart ──────────────────────────────────────────────────────
 app.get("/cart", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
@@ -784,7 +958,16 @@ app.get("/cart", async (req, res) => {
   const total = enrichedCart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const cartCount = enrichedCart.reduce((acc, item) => acc + item.quantity, 0);
 
-  res.render("cart", { cartItems: enrichedCart, total, cartCount });
+  // Fetch shipping setting
+  const { data: shippingSetting } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "shipping_cost")
+    .maybeSingle();
+
+  const shippingCost = shippingSetting ? parseFloat(shippingSetting.value) : 0;
+
+  res.render("cart", { cartItems: enrichedCart, total, cartCount, shippingCost });
 });
 
 app.post("/cart/add", async (req, res) => {
@@ -900,9 +1083,18 @@ app.get("/checkout", async (req, res) => {
     .eq("user_id", req.session.user.id);
 
   const cartItems = await enrichCartItems(rawCart || []);
-  const total = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
-  res.render("checkout", { addresses: addresses || [], cartItems, total });
+  const { data: shippingSetting } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "shipping_cost")
+    .maybeSingle();
+
+  const shippingCost = shippingSetting ? parseFloat(shippingSetting.value) : 0;
+  const total = subtotal + shippingCost;
+
+  res.render("checkout", { addresses: addresses || [], cartItems, subtotal, total, shippingCost });
 });
 
 app.post("/checkout", async (req, res) => {
@@ -1095,9 +1287,9 @@ app.post("/checkout", async (req, res) => {
 
     // Admin email
     await transporter.sendMail({
-      from: '"GardenRich Orders" <prajjwalj02@gmail.com>',
-      to: "sahilcingh@gmail.com",
-      cc: "prajjwalj02@gmail.com",
+      from: `"GardenRich Orders" <${process.env.EMAIL_USER}>`,
+      to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com",
+      cc: process.env.EMAIL_USER,
       subject: `🛒 New Order #${order.id.toString().slice(0, 8)} — Rs. ${total.toLocaleString("en-IN")}`,
       html: `
         <div style="font-family:sans-serif;max-width:620px;margin:0 auto;">
@@ -1127,7 +1319,7 @@ app.post("/checkout", async (req, res) => {
 
     // Customer confirmation email
     await transporter.sendMail({
-      from: '"GardenRich" <prajjwalj02@gmail.com>',
+      from: `"GardenRich" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `✅ Order Confirmed — Rs. ${total.toLocaleString("en-IN")}`,
       html: `

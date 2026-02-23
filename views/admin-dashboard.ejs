@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | GardenRich</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-zinc-100 font-sans antialiased text-zinc-900">
+    <%- include("partials/header") %>
+
+    <div class="max-w-7xl mx-auto px-6 py-10 pb-24">
+        <div class="flex gap-8">
+
+            <!-- SIDEBAR -->
+            <div class="w-56 shrink-0">
+                <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden sticky top-24">
+                    <div class="p-4 border-b border-zinc-100 bg-zinc-50">
+                        <p class="text-[10px] font-black uppercase tracking-widest text-zinc-400">Admin</p>
+                        <p class="text-sm font-black text-zinc-800 mt-0.5">Dashboard</p>
+                    </div>
+                    <nav class="p-2 space-y-1">
+                        <button onclick="switchTab('add-product')" id="tab-btn-add-product"
+                            class="sidebar-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left bg-zinc-900 text-white">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Add Product
+                        </button>
+                        <button onclick="switchTab('categories')" id="tab-btn-categories"
+                            class="sidebar-tab w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left text-zinc-600 hover:bg-zinc-50">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A2 2 0 013 9.172V5a2 2 0 012-2z"/>
+                            </svg>
+                            Categories
+                        </button>
+                    </nav>
+                    <div class="p-2 pt-0 border-t border-zinc-100 mt-1">
+                        <a href="/admin/orders"
+                            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
+                            <svg class="w-4 h-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            Orders
+                        </a>
+                        <a href="/"
+                            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
+                            <svg class="w-4 h-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                            </svg>
+                            View Store
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONTENT -->
+            <div class="flex-1 min-w-0">
+
+                <!-- ═══════════════════════════════════ -->
+                <!-- ADD PRODUCT TAB                     -->
+                <!-- ═══════════════════════════════════ -->
+                <div id="tab-add-product" class="tab-panel">
+
+                    <div class="bg-white rounded-3xl shadow-xl shadow-zinc-200/50 border border-zinc-100 overflow-hidden">
+                        <div class="p-8 border-b border-zinc-100 bg-zinc-50/50">
+                            <h2 class="text-3xl font-black tracking-tight text-zinc-900">Add New Product</h2>
+                            <p class="text-zinc-500 text-sm mt-1">Fill in the details to list a new item in the GardenRich store.</p>
+                        </div>
+
+                        <form action="/admin/add-product" method="POST" enctype="multipart/form-data" class="p-8 space-y-6">
+
+                            <!-- Product Name -->
+                            <div>
+                                <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Product Name</label>
+                                <input type="text" name="name" placeholder="e.g. Amul Fresh Milk" required
+                                    class="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all">
+                            </div>
+
+                            <!-- Category -->
+                            <div>
+                                <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Category</label>
+                                <select name="category" required
+                                    class="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all appearance-none cursor-pointer">
+                                    <option value="" disabled selected>Select a category</option>
+                                    <% categories.forEach(cat => { %>
+                                        <% if (cat.slug !== 'all') { %>
+                                        <option value="<%= cat.slug %>"><%= cat.name %></option>
+                                        <% } %>
+                                    <% }) %>
+                                </select>
+                            </div>
+
+                            <!-- Variants -->
+                            <div>
+                                <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-1">Pack Sizes / Variants</label>
+                                <p class="text-xs text-zinc-400 mb-4">Each size will appear as a dropdown option on the product card.</p>
+
+                                <div class="bg-zinc-50 rounded-2xl border border-zinc-200 overflow-hidden">
+                                    <div class="grid grid-cols-12 gap-3 px-4 py-3 border-b border-zinc-200 bg-zinc-100">
+                                        <div class="col-span-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">Qty</div>
+                                        <div class="col-span-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">Unit</div>
+                                        <div class="col-span-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">Price ₹</div>
+                                        <div class="col-span-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">MRP ₹</div>
+                                        <div class="col-span-3 text-[10px] font-black uppercase tracking-widest text-zinc-500">Stock</div>
+                                        <div class="col-span-1"></div>
+                                    </div>
+                                    <div id="variantsContainer" class="divide-y divide-zinc-100">
+                                        <div class="variant-row grid grid-cols-12 gap-3 p-4 items-center">
+                                            <div class="col-span-2">
+                                                <input type="number" name="weightValue[]" placeholder="500" required min="0"
+                                                    class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                                            </div>
+                                            <div class="col-span-2">
+                                                <select name="unit[]"
+                                                    class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold appearance-none cursor-pointer transition-all">
+                                                    <option value="ml">ml</option>
+                                                    <option value="L">L</option>
+                                                    <option value="g">g</option>
+                                                    <option value="kg">kg</option>
+                                                    <option value="pcs">pcs</option>
+                                                    <option value="dozen">Dozen</option>
+                                                    <option value="pack">Pack</option>
+                                                    <option value="bottle">Bottle</option>
+                                                    <option value="box">Box</option>
+                                                    <option value="pouch">Pouch</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-span-2">
+                                                <input type="number" name="price[]" placeholder="0" required min="0"
+                                                    class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                                            </div>
+                                            <div class="col-span-2">
+                                                <input type="number" name="mrp[]" placeholder="0" min="0"
+                                                    class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                                            </div>
+                                            <div class="col-span-3">
+                                                <input type="number" name="stock[]" placeholder="0" min="0"
+                                                    class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                                            </div>
+                                            <div class="col-span-1 flex justify-center">
+                                                <button type="button" onclick="removeVariantRow(this)"
+                                                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all invisible">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="button" onclick="addVariantRow()"
+                                    class="mt-3 flex items-center gap-2 text-sm font-bold text-green-600 hover:text-green-700 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Add Another Size
+                                </button>
+                            </div>
+
+                            <!-- Image -->
+                            <div>
+                                <label class="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Product Image</label>
+                                <input type="file" name="imageFile" accept="image/*" required id="imageInput"
+                                    class="w-full bg-zinc-50 border border-zinc-200 p-4 rounded-2xl file:bg-zinc-900 file:text-white file:rounded-xl file:border-0 file:px-4 file:py-2 file:text-xs file:font-bold cursor-pointer">
+                                <img id="imagePreview" class="mt-3 w-full h-48 object-cover rounded-2xl hidden">
+                            </div>
+
+                            <!-- Is Featured -->
+                            <div class="flex items-center gap-3 p-4 bg-zinc-50 rounded-2xl border border-zinc-200">
+                                <input type="checkbox" name="is_featured" id="is_featured" value="true"
+                                    class="w-5 h-5 accent-green-600 cursor-pointer">
+                                <div>
+                                    <label for="is_featured" class="font-bold text-zinc-700 cursor-pointer">Mark as Featured / Best Seller</label>
+                                    <p class="text-xs text-zinc-400">Featured products appear at the top of the store</p>
+                                </div>
+                            </div>
+
+                            <button type="submit"
+                                class="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-700 transition-all active:scale-95">
+                                List Product
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════ -->
+                <!-- CATEGORIES TAB                      -->
+                <!-- ═══════════════════════════════════ -->
+                <div id="tab-categories" class="tab-panel hidden">
+
+                    <div class="mb-6">
+                        <h1 class="font-extrabold text-3xl tracking-tight text-zinc-900">Categories</h1>
+                        <p class="text-zinc-400 text-sm mt-1">Add, rename or remove product categories.</p>
+                    </div>
+
+                    <!-- Add New Category -->
+                    <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6 mb-6">
+                        <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-5 pb-3 border-b border-zinc-100">
+                            Add New Category
+                        </h2>
+                        <div class="flex gap-3">
+                            <input type="text" id="newCatName" placeholder="Category name — e.g. Beverages"
+                                class="flex-1 bg-zinc-50 border border-zinc-200 p-3.5 rounded-xl focus:outline-none focus:border-green-500 text-sm font-medium transition-all">
+                            <button onclick="addCategory()"
+                                class="bg-green-600 hover:bg-green-700 text-white px-6 py-3.5 rounded-xl font-black text-sm transition-all active:scale-95 shrink-0">
+                                + Add
+                            </button>
+                        </div>
+                        <p class="text-xs text-zinc-400 mt-2">Slug is auto-generated from the name you enter.</p>
+                    </div>
+
+                    <!-- Existing Categories -->
+                    <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                        <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-5 pb-3 border-b border-zinc-100">
+                            All Categories
+                        </h2>
+
+                        <div id="categoriesList" class="space-y-2">
+                            <% categories.forEach(cat => { %>
+                            <div class="category-row group flex items-center gap-3 p-4 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-100 transition-all"
+                                data-id="<%= cat.id %>" data-slug="<%= cat.slug %>">
+
+                                <!-- Tag icon -->
+                                <div class="w-8 h-8 bg-white border border-zinc-200 rounded-lg flex items-center justify-center shrink-0">
+                                    <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A2 2 0 013 9.172V5a2 2 0 012-2z"/>
+                                    </svg>
+                                </div>
+
+                                <!-- Name — editable on click -->
+                                <div class="flex-1 min-w-0">
+                                    <% if (cat.slug === 'all') { %>
+                                    <p class="font-bold text-sm text-zinc-800"><%= cat.name %></p>
+                                    <% } else { %>
+                                    <input type="text"
+                                        class="cat-name-input w-full bg-transparent font-bold text-sm text-zinc-800 border border-transparent rounded-lg px-2 py-1 focus:outline-none focus:bg-white focus:border-green-500 transition-all cursor-pointer hover:border-zinc-200"
+                                        value="<%= cat.name %>"
+                                        data-original="<%= cat.name %>"
+                                        onchange="renameCategory(this)"
+                                        title="Click to rename">
+                                    <% } %>
+                                    <p class="text-[10px] text-zinc-400 font-mono px-2">slug: <%= cat.slug %></p>
+                                </div>
+
+                                <!-- Product count -->
+                                <span class="text-[10px] font-black text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-lg shrink-0" id="cat-count-<%= cat.id %>">
+                                    ...
+                                </span>
+
+                                <!-- Actions -->
+                                <% if (cat.slug === 'all') { %>
+                                <span class="text-[10px] font-bold text-zinc-300 bg-zinc-100 px-3 py-2 rounded-xl shrink-0">
+                                    🔒 Protected
+                                </span>
+                                <% } else { %>
+                                <button onclick="deleteCategory(this)"
+                                    class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 transition-all shrink-0 opacity-0 group-hover:opacity-100">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                                <% } %>
+
+                            </div>
+                            <% }) %>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Category Modal -->
+    <div id="deleteCatModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center">
+            <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </div>
+            <h2 class="text-xl font-black text-zinc-900 mb-2">Delete Category?</h2>
+            <p class="text-zinc-400 text-sm mb-1">Products here will move to <strong>All Products</strong>.</p>
+            <p class="text-zinc-400 text-sm mb-6">This cannot be undone.</p>
+            <input type="hidden" id="deleteCatId">
+            <div class="flex gap-3">
+                <button onclick="closeCatDeleteModal()"
+                    class="flex-1 py-3 rounded-xl border border-zinc-200 font-bold text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onclick="confirmCatDelete()"
+                    class="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black active:scale-95">Yes, Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/javascript/index.js"></script>
+    <script>
+        // ── Tab switching ──────────────────────────────
+        function switchTab(name) {
+            document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
+            document.getElementById(`tab-${name}`).classList.remove("hidden");
+
+            document.querySelectorAll(".sidebar-tab").forEach(btn => {
+                btn.classList.remove("bg-zinc-900", "text-white");
+                btn.classList.add("text-zinc-600", "hover:bg-zinc-50");
+            });
+            document.getElementById(`tab-btn-${name}`).classList.add("bg-zinc-900", "text-white");
+            document.getElementById(`tab-btn-${name}`).classList.remove("text-zinc-600", "hover:bg-zinc-50");
+
+            if (name === "categories") loadCategoryCounts();
+        }
+
+        // ── Image preview ──────────────────────────────
+        document.getElementById("imageInput").addEventListener("change", function () {
+            const preview = document.getElementById("imagePreview");
+            if (this.files[0]) {
+                preview.src = URL.createObjectURL(this.files[0]);
+                preview.classList.remove("hidden");
+            }
+        });
+
+        // ── Variant rows ───────────────────────────────
+        function addVariantRow() {
+            const container = document.getElementById("variantsContainer");
+            const div = document.createElement("div");
+            div.className = "variant-row grid grid-cols-12 gap-3 p-4 items-center border-t border-zinc-100";
+            div.innerHTML = `
+                <div class="col-span-2">
+                    <input type="number" name="weightValue[]" placeholder="500" required min="0"
+                        class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                </div>
+                <div class="col-span-2">
+                    <select name="unit[]" class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold appearance-none cursor-pointer transition-all">
+                        <option value="ml">ml</option><option value="L">L</option>
+                        <option value="g">g</option><option value="kg">kg</option>
+                        <option value="pcs">pcs</option><option value="dozen">Dozen</option>
+                        <option value="pack">Pack</option><option value="bottle">Bottle</option>
+                        <option value="box">Box</option><option value="pouch">Pouch</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <input type="number" name="price[]" placeholder="0" required min="0"
+                        class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                </div>
+                <div class="col-span-2">
+                    <input type="number" name="mrp[]" placeholder="0" min="0"
+                        class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                </div>
+                <div class="col-span-3">
+                    <input type="number" name="stock[]" placeholder="0" min="0"
+                        class="w-full bg-white border border-zinc-200 p-3 rounded-xl focus:outline-none focus:border-green-500 text-sm font-bold transition-all">
+                </div>
+                <div class="col-span-1 flex justify-center">
+                    <button type="button" onclick="removeVariantRow(this)"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>`;
+            container.appendChild(div);
+        }
+
+        function removeVariantRow(btn) {
+            const rows = document.querySelectorAll(".variant-row");
+            if (rows.length > 1) btn.closest(".variant-row").remove();
+        }
+
+        // ── Category: counts ───────────────────────────
+        async function loadCategoryCounts() {
+            try {
+                const res = await fetch("/admin/categories/counts");
+                const data = await res.json();
+                Object.entries(data.counts).forEach(([id, count]) => {
+                    const el = document.getElementById(`cat-count-${id}`);
+                    if (el) el.textContent = `${count} product${count !== 1 ? "s" : ""}`;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        // ── Category: add ──────────────────────────────
+        async function addCategory() {
+            const name = document.getElementById("newCatName").value.trim();
+            if (!name) { showToast("Enter a category name.", "red"); return; }
+
+            try {
+                const res = await fetch("/admin/categories/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name }),
+                });
+                const data = await res.json();
+                if (!res.ok) { showToast(data.error, "red"); return; }
+
+                // Inject row
+                const list = document.getElementById("categoriesList");
+                const div = document.createElement("div");
+                div.className = "category-row group flex items-center gap-3 p-4 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-100 transition-all";
+                div.setAttribute("data-id", data.category.id);
+                div.setAttribute("data-slug", data.category.slug);
+                div.innerHTML = `
+                    <div class="w-8 h-8 bg-white border border-zinc-200 rounded-lg flex items-center justify-center shrink-0">
+                        <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A2 2 0 013 9.172V5a2 2 0 012-2z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <input type="text"
+                            class="cat-name-input w-full bg-transparent font-bold text-sm text-zinc-800 border border-transparent rounded-lg px-2 py-1 focus:outline-none focus:bg-white focus:border-green-500 transition-all cursor-pointer hover:border-zinc-200"
+                            value="${data.category.name}" data-original="${data.category.name}"
+                            onchange="renameCategory(this)" title="Click to rename">
+                        <p class="text-[10px] text-zinc-400 font-mono px-2">slug: ${data.category.slug}</p>
+                    </div>
+                    <span class="text-[10px] font-black text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-lg shrink-0" id="cat-count-${data.category.id}">0 products</span>
+                    <button onclick="deleteCategory(this)"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 transition-all shrink-0 opacity-0 group-hover:opacity-100">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>`;
+                div.style.opacity = "0";
+                list.appendChild(div);
+                requestAnimationFrame(() => { div.style.transition = "opacity 0.3s"; div.style.opacity = "1"; });
+
+                document.getElementById("newCatName").value = "";
+                showToast(`"${name}" category added!`, "green");
+            } catch (e) { showToast("Server error.", "red"); }
+        }
+
+        // ── Category: rename ───────────────────────────
+        async function renameCategory(input) {
+            const row = input.closest(".category-row");
+            const id = row.getAttribute("data-id");
+            const newName = input.value.trim();
+            const original = input.getAttribute("data-original");
+            if (!newName || newName === original) { input.value = original; return; }
+
+            try {
+                const res = await fetch(`/admin/categories/rename/${id}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: newName }),
+                });
+                const data = await res.json();
+                if (res.ok) { input.setAttribute("data-original", newName); showToast("Renamed!", "green"); }
+                else { input.value = original; showToast(data.error || "Failed.", "red"); }
+            } catch (e) { input.value = original; showToast("Server error.", "red"); }
+        }
+
+        // ── Category: delete ───────────────────────────
+        function deleteCategory(btn) {
+            const row = btn.closest(".category-row");
+            document.getElementById("deleteCatId").value = row.getAttribute("data-id");
+            const modal = document.getElementById("deleteCatModal");
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+        }
+
+        function closeCatDeleteModal() {
+            const modal = document.getElementById("deleteCatModal");
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+        }
+
+        async function confirmCatDelete() {
+            const id = document.getElementById("deleteCatId").value;
+            closeCatDeleteModal();
+            try {
+                const res = await fetch(`/admin/categories/${id}`, { method: "DELETE" });
+                const data = await res.json();
+                if (res.ok) {
+                    const row = document.querySelector(`.category-row[data-id="${id}"]`);
+                    if (row) { row.style.transition = "all 0.25s"; row.style.opacity = "0"; setTimeout(() => row.remove(), 250); }
+                    showToast("Category deleted.", "green");
+                } else { showToast(data.error || "Failed.", "red"); }
+            } catch (e) { showToast("Server error.", "red"); }
+        }
+    </script>
+</body>
+</html>

@@ -1,5 +1,4 @@
 function showCounter(btn) {
-  // Redirect to login if not logged in
   if (typeof IS_LOGGED_IN !== "undefined" && !IS_LOGGED_IN) {
     window.location.href = "/login";
     return;
@@ -13,7 +12,6 @@ function showCounter(btn) {
 
   if (stock === 0) return;
 
-  // Optimistically show counter
   btn.classList.add("hidden");
   counter.classList.remove("hidden");
   counter.classList.add("flex");
@@ -27,11 +25,9 @@ function showCounter(btn) {
     .then(async (res) => {
       const data = await res.json();
       if (!res.ok) {
-        // Rollback UI — item is out of stock or error
         counter.classList.add("hidden");
         counter.classList.remove("flex");
         btn.classList.remove("hidden");
-        // Update the card to show out of stock
         parent.setAttribute("data-stock", "0");
         const outOfStockBtn = parent.querySelector(".out-of-stock-btn");
         if (outOfStockBtn) {
@@ -41,17 +37,10 @@ function showCounter(btn) {
         showStockPopup(0);
         return;
       }
-      const badge = document.getElementById("cartCount");
-      if (badge) {
-        badge.innerText = data.totalItems;
-        badge.classList.remove("hidden");
-        badge.classList.add("scale-110");
-        setTimeout(() => badge.classList.remove("scale-110"), 200);
-      }
+      updateBadge(data.totalItems);
     })
     .catch((err) => {
       console.error("Cart add failed:", err);
-      // Rollback on network error
       counter.classList.add("hidden");
       counter.classList.remove("flex");
       btn.classList.remove("hidden");
@@ -88,9 +77,10 @@ function showStockPopup(stock) {
   const existing = document.getElementById("stockPopup");
   if (existing) existing.remove();
 
-  const msg = stock === 0
-    ? "This item is out of stock."
-    : `Only ${stock} item${stock === 1 ? "" : "s"} available in stock.`;
+  const msg =
+    stock === 0
+      ? "This item is out of stock."
+      : `Only ${stock} item${stock === 1 ? "" : "s"} available in stock.`;
 
   const popup = document.createElement("div");
   popup.id = "stockPopup";
@@ -112,7 +102,9 @@ function showStockPopup(stock) {
 }
 
 function updateCartQty(btn, change) {
-  const itemContainer = btn.closest("[data-price]");
+  const itemContainer = btn.closest(".cart-item");
+  if (!itemContainer) return;
+
   const productId = itemContainer.getAttribute("data-id");
   const qtySpan = itemContainer.querySelector(".qty-text");
   const price = parseFloat(itemContainer.getAttribute("data-price"));
@@ -126,7 +118,6 @@ function updateCartQty(btn, change) {
   }
 
   currentQty += change;
-
   if (currentQty < 0) return;
 
   if (currentQty === 0) {
@@ -134,6 +125,12 @@ function updateCartQty(btn, change) {
     itemContainer.style.transform = "scale(0.95)";
     itemContainer.style.transition = "all 0.2s ease";
     setTimeout(() => {
+      const summaryRow = document.getElementById(`summary-row-${productId}`);
+      if (summaryRow) {
+        summaryRow.style.opacity = "0";
+        summaryRow.style.transition = "opacity 0.2s ease";
+        setTimeout(() => summaryRow.remove(), 200);
+      }
       itemContainer.remove();
       updateOrderSummary();
       checkEmptyCart();
@@ -142,25 +139,15 @@ function updateCartQty(btn, change) {
     qtySpan.innerText = currentQty;
 
     const subtotalEl = itemContainer.querySelector(".item-subtotal");
-    if (subtotalEl) {
-      subtotalEl.textContent =
-        "Rs. " + (price * currentQty).toLocaleString("en-IN");
-    }
+    if (subtotalEl)
+      subtotalEl.textContent = "Rs. " + (price * currentQty).toLocaleString("en-IN");
 
-    const summaryQty = document.querySelector(
-      `#summary-row-${productId} .summary-item-qty`
-    );
-    if (summaryQty) {
-      summaryQty.textContent = "×" + currentQty;
-    }
+    const summaryQty = document.querySelector(`#summary-row-${productId} .summary-item-qty`);
+    if (summaryQty) summaryQty.textContent = "×" + currentQty;
 
-    const summaryLine = document.querySelector(
-      `.summary-item-total[data-id="${productId}"]`
-    );
-    if (summaryLine) {
-      summaryLine.textContent =
-        "Rs. " + (price * currentQty).toLocaleString("en-IN");
-    }
+    const summaryLine = document.querySelector(`.summary-item-total[data-id="${productId}"]`);
+    if (summaryLine)
+      summaryLine.textContent = "Rs. " + (price * currentQty).toLocaleString("en-IN");
 
     updateOrderSummary();
   }
@@ -175,49 +162,60 @@ async function updateCartOnServer(productId, quantity) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId, quantity }),
     });
-
     const data = await response.json();
-
-    const badge = document.getElementById("cartCount");
-    if (badge) {
-      badge.innerText = data.totalItems;
-      if (data.totalItems === 0) {
-        badge.classList.add("hidden");
-      } else {
-        badge.classList.remove("hidden");
-      }
-      badge.classList.add("scale-110");
-      setTimeout(() => badge.classList.remove("scale-110"), 200);
-    }
+    updateBadge(data.totalItems);
   } catch (err) {
     console.error("Cart update failed:", err);
   }
 }
 
+function updateBadge(totalItems) {
+  const badge = document.getElementById("cartCount");
+  if (!badge) return;
+  badge.innerText = totalItems;
+  totalItems === 0 ? badge.classList.add("hidden") : badge.classList.remove("hidden");
+  badge.classList.add("scale-110");
+  setTimeout(() => badge.classList.remove("scale-110"), 200);
+}
+
 function updateOrderSummary() {
   let total = 0;
-
-  document.querySelectorAll("[data-price]").forEach((item) => {
+  document.querySelectorAll(".cart-item").forEach((item) => {
     const price = parseFloat(item.getAttribute("data-price"));
     const qty = parseInt(item.querySelector(".qty-text")?.innerText || 0);
-    if (!isNaN(price) && !isNaN(qty)) {
-      total += price * qty;
-    }
+    if (!isNaN(price) && !isNaN(qty)) total += price * qty;
   });
 
   const formatted = "Rs. " + total.toLocaleString("en-IN");
-
-  const els = document.querySelectorAll(
-    "#summaryOrderTotal, #summaryFinalTotal, #cartTotal"
+  document.querySelectorAll("#summaryOrderTotal, #summaryFinalTotal, #cartTotal").forEach(
+    (el) => { if (el) el.innerText = formatted; }
   );
-  els.forEach((el) => {
-    if (el) el.innerText = formatted;
-  });
 }
 
 function checkEmptyCart() {
-  const items = document.querySelectorAll("[data-price]");
-  if (items.length === 0) location.reload();
+  const items = document.querySelectorAll(".cart-item");
+  const countEl = document.getElementById("cartItemCount");
+  if (countEl) countEl.textContent = `(${items.length} Items)`;
+
+  if (items.length === 0) {
+    const container = document.getElementById("cartPageContainer");
+    if (container) {
+      container.className =
+        "flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-dashed border-zinc-200 text-center";
+      container.innerHTML = `
+        <div class="inline-flex items-center justify-center w-24 h-24 bg-zinc-100 rounded-full mb-6">
+          <svg class="w-12 h-12 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+          </svg>
+        </div>
+        <h2 class="text-2xl font-black text-zinc-900 mb-2">Your cart is empty</h2>
+        <p class="text-zinc-400 font-medium mb-8 max-w-xs">Looks like you removed everything.</p>
+        <a href="/" class="inline-block bg-green-600 hover:bg-green-700 text-white font-black py-4 px-10 rounded-2xl transition-all active:scale-95 uppercase tracking-widest text-sm shadow-lg shadow-green-100">
+          Browse Products
+        </a>`;
+    }
+    updateBadge(0);
+  }
 }
 
 function toggleUserMenu(event) {
@@ -229,12 +227,7 @@ function toggleUserMenu(event) {
 document.addEventListener("click", function (e) {
   const menu = document.getElementById("userMenu");
   const button = document.getElementById("userButton");
-  if (
-    menu &&
-    button &&
-    !menu.contains(e.target) &&
-    !button.contains(e.target)
-  ) {
+  if (menu && button && !menu.contains(e.target) && !button.contains(e.target)) {
     menu.classList.add("hidden");
   }
 });
@@ -257,7 +250,6 @@ function closeDeleteModal() {
 async function confirmDeleteAction() {
   const productId = document.getElementById("deleteProductId").value;
   const imageUrl = document.getElementById("deleteImageUrl").value;
-
   closeDeleteModal();
 
   try {
@@ -275,71 +267,172 @@ async function confirmDeleteAction() {
         card.style.transition = "all 0.3s ease";
         setTimeout(() => card.remove(), 300);
       }
+      showToast("Product deleted successfully!", "green");
     } else {
       const errorData = await response.json();
-      alert("Error: " + errorData.error);
+      showToast("Error: " + errorData.error, "red");
     }
   } catch (err) {
-    console.error("Delete error:", err);
-    alert("Server communication error.");
+    showToast("Server communication error.", "red");
   }
 }
 
 // ── Edit modal ────────────────────────────────────────────────
-function openEditModal(productId) {
-  const card = document.querySelector(`.product[data-id="${productId}"]`);
-  if (!card) { console.error("Card not found for id", productId); return; }
-
-  const name = card.getAttribute("data-name") || "";
-  const category = card.getAttribute("data-category") || "";
-  const variantsRaw = card.getAttribute("data-variants") || "[]";
-
-  let variants = [];
-  try { variants = JSON.parse(variantsRaw); } catch(e) { console.error("Variant parse error", e); }
-
+async function openEditModal(productId) {
   document.getElementById("editProductId").value = productId;
-  document.getElementById("editName").value = name;
 
-  const categorySelect = document.getElementById("editCategory");
-  if (categorySelect) categorySelect.value = category;
+  const card = document.querySelector(`[data-id="${productId}"]`);
+  document.getElementById("editName").value = card.getAttribute("data-name") || "";
+  document.getElementById("editCategory").value = card.getAttribute("data-category") || "";
 
+  // Reset image UI
   const preview = document.getElementById("editImagePreview");
+  const placeholder = document.getElementById("editImagePlaceholder");
   preview.classList.add("hidden");
-  preview.src = "";
+  placeholder.classList.remove("hidden");
 
   const imageInput = document.getElementById("editImage");
-  const newImageInput = imageInput.cloneNode(true);
-  imageInput.parentNode.replaceChild(newImageInput, imageInput);
-  newImageInput.addEventListener("change", function () {
-    const file = this.files[0];
-    if (file) {
-      preview.src = URL.createObjectURL(file);
+  const newInput = imageInput.cloneNode(true);
+  imageInput.parentNode.replaceChild(newInput, imageInput);
+  newInput.addEventListener("change", function () {
+    if (this.files[0]) {
+      preview.src = URL.createObjectURL(this.files[0]);
       preview.classList.remove("hidden");
+      placeholder.classList.add("hidden");
     }
   });
 
-  const container = document.getElementById("editVariantStocks");
-  if (container) {
-    if (variants.length > 0) {
-      container.innerHTML = variants.map(v => `
-        <div class="flex items-center gap-3 bg-zinc-50 rounded-xl p-3">
-          <span class="text-sm font-bold text-zinc-700 flex-1">${v.weight}</span>
-          <div class="flex items-center gap-2">
-            <label class="text-xs text-zinc-400 font-bold">Stock</label>
-            <input type="number" value="${v.stock}" min="0" step="1"
-              data-variant-id="${v.id}"
-              class="variant-stock-input w-20 p-2 rounded-lg border border-zinc-200 text-sm font-bold text-center outline-none focus:border-green-500">
+  // Clear any previously added new variant rows
+  document.getElementById("newVariantRows").innerHTML = "";
+
+  // Load existing variants from server
+  const variantRowsEl = document.getElementById("editVariantRows");
+  variantRowsEl.innerHTML = `
+    <div class="flex items-center justify-center py-4 gap-2 text-zinc-400">
+      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+      </svg>
+      <span class="text-xs font-bold">Loading variants...</span>
+    </div>`;
+
+  try {
+    const res = await fetch(`/admin/product-variants/${productId}`);
+    const data = await res.json();
+    const variants = data.variants || [];
+
+    if (variants.length === 0) {
+      variantRowsEl.innerHTML = `<p class="text-xs text-zinc-400 text-center py-3">No variants found.</p>`;
+    } else {
+      variantRowsEl.innerHTML = variants.map((v) => `
+        <div class="existing-variant-row grid grid-cols-12 gap-2 items-center bg-zinc-50 rounded-xl p-3 border border-zinc-100">
+          <div class="col-span-3">
+            <p class="text-xs font-black text-zinc-700 bg-zinc-100 px-2 py-2 rounded-lg text-center truncate">${v.weight}</p>
+          </div>
+          <div class="col-span-3">
+            <div class="relative">
+              <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+              <input type="number"
+                class="variant-price-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
+                data-variant-id="${v.id}" value="${v.price ?? ''}" min="0" placeholder="Price">
+            </div>
+          </div>
+          <div class="col-span-3">
+            <div class="relative">
+              <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+              <input type="number"
+                class="variant-mrp-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
+                data-variant-id="${v.id}" value="${v.mrp ?? ''}" min="0" placeholder="MRP">
+            </div>
+          </div>
+          <div class="col-span-2">
+            <input type="number"
+              class="variant-stock-input w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all text-center"
+              data-variant-id="${v.id}" value="${v.stock ?? 0}" min="0" placeholder="Stock">
+          </div>
+          <div class="col-span-1 flex justify-center">
+            <button type="button" onclick="removeExistingVariant(this, '${v.id}')"
+              class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all"
+              title="Remove variant">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
           </div>
         </div>
       `).join("");
-    } else {
-      container.innerHTML = '<p class="text-xs text-zinc-400">No variants found</p>';
     }
+  } catch (err) {
+    variantRowsEl.innerHTML = `<p class="text-xs text-red-400 text-center py-3">Failed to load variants. Try again.</p>`;
+    console.error("Variant load error:", err);
   }
 
   const modal = document.getElementById("editModal");
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+}
+
+function addNewVariantRow() {
+  const container = document.getElementById("newVariantRows");
+  const row = document.createElement("div");
+  row.className = "new-variant-row grid grid-cols-12 gap-2 items-center bg-green-50 rounded-xl p-3 border border-green-100";
+  row.innerHTML = `
+    <div class="col-span-3">
+      <div class="grid grid-cols-2 gap-1">
+        <input type="number" class="new-variant-qty w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center transition-all" placeholder="500" min="0">
+        <select class="new-variant-unit w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold appearance-none cursor-pointer transition-all">
+          <option value="ml">ml</option>
+          <option value="L">L</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="pcs">pcs</option>
+          <option value="dozen">Dozen</option>
+          <option value="pack">Pack</option>
+          <option value="bottle">Bottle</option>
+          <option value="box">Box</option>
+          <option value="pouch">Pouch</option>
+        </select>
+      </div>
+    </div>
+    <div class="col-span-3">
+      <div class="relative">
+        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+        <input type="number" class="new-variant-price w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all" placeholder="Price" min="0">
+      </div>
+    </div>
+    <div class="col-span-3">
+      <div class="relative">
+        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+        <input type="number" class="new-variant-mrp w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all" placeholder="MRP" min="0">
+      </div>
+    </div>
+    <div class="col-span-2">
+      <input type="number" class="new-variant-stock w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center transition-all" placeholder="0" min="0">
+    </div>
+    <div class="col-span-1 flex justify-center">
+      <button type="button" onclick="this.closest('.new-variant-row').remove()"
+        class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  `;
+  container.appendChild(row);
+}
+
+// Track variants marked for deletion
+const variantsToDelete = [];
+
+function removeExistingVariant(btn, variantId) {
+  const row = btn.closest(".existing-variant-row");
+  row.style.opacity = "0";
+  row.style.transform = "scale(0.97)";
+  row.style.transition = "all 0.2s ease";
+  setTimeout(() => {
+    row.remove();
+    variantsToDelete.push(variantId);
+  }, 200);
 }
 
 function closeEditModal() {
@@ -350,41 +443,108 @@ function closeEditModal() {
 
 async function submitEdit() {
   const id = document.getElementById("editProductId").value;
-  const name = document.getElementById("editName").value;
+  const name = document.getElementById("editName").value.trim();
   const category = document.getElementById("editCategory").value;
   const imageFile = document.getElementById("editImage").files[0];
+
+  if (!name) {
+    showToast("Product name cannot be empty.", "red");
+    return;
+  }
+
+  // Collect existing variant updates
+  const variantUpdates = [];
+  document.querySelectorAll(".variant-price-input").forEach((priceInput) => {
+    const variantId = priceInput.getAttribute("data-variant-id");
+    const mrpInput = document.querySelector(`.variant-mrp-input[data-variant-id="${variantId}"]`);
+    const stockInput = document.querySelector(`.variant-stock-input[data-variant-id="${variantId}"]`);
+    variantUpdates.push({
+      id: variantId,
+      price: parseFloat(priceInput.value) || 0,
+      mrp: mrpInput && mrpInput.value !== "" ? parseFloat(mrpInput.value) : null,
+      stock: stockInput ? parseInt(stockInput.value) || 0 : 0,
+    });
+  });
+
+  // Collect new variants
+  const newVariants = [];
+  document.querySelectorAll(".new-variant-row").forEach((row) => {
+    const qty = row.querySelector(".new-variant-qty").value;
+    const unit = row.querySelector(".new-variant-unit").value;
+    const price = row.querySelector(".new-variant-price").value;
+    const mrp = row.querySelector(".new-variant-mrp").value;
+    const stock = row.querySelector(".new-variant-stock").value;
+
+    if (qty && price) {
+      newVariants.push({
+        weight: `${qty} ${unit}`,
+        price: parseFloat(price) || 0,
+        mrp: mrp !== "" ? parseFloat(mrp) : null,
+        stock: parseInt(stock) || 0,
+      });
+    }
+  });
 
   const formData = new FormData();
   formData.append("name", name);
   formData.append("category", category);
+  formData.append("variantUpdates", JSON.stringify(variantUpdates));
+  formData.append("newVariants", JSON.stringify(newVariants));
+  formData.append("deleteVariants", JSON.stringify(variantsToDelete));
   if (imageFile) formData.append("imageFile", imageFile);
 
-  document.querySelectorAll(".variant-stock-input").forEach(input => {
-    formData.append("variantId[]", input.getAttribute("data-variant-id"));
-    formData.append("variantStock[]", input.value);
-  });
+  const saveBtn = document.querySelector('[onclick="submitEdit()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
 
   try {
     const response = await fetch(`/admin/edit-product/${id}`, {
       method: "POST",
       body: formData,
     });
-
     const data = await response.json();
 
     if (response.ok) {
+      variantsToDelete.length = 0; // clear deletion list
       closeEditModal();
-      location.reload();
+      showToast("Product updated successfully!", "green");
+      setTimeout(() => location.reload(), 1200);
     } else {
-      alert("Error: " + data.error);
+      showToast("Error: " + (data.error || "Unknown error"), "red");
     }
   } catch (err) {
-    alert("Server communication error.");
-    console.error(err);
+    showToast("Server error. Please try again.", "red");
+    console.error("submitEdit error:", err);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Changes"; }
   }
 }
 
-// ── Variant change ────────────────────────────────────────────
+function showToast(message, color = "green") {
+  const existing = document.getElementById("appToast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "appToast";
+  toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${
+    color === "green" ? "bg-green-600" : "bg-red-500"
+  } text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl z-50 flex items-center gap-2`;
+  toast.innerHTML = `
+    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      ${color === "green"
+        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>'
+        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>'}
+    </svg>
+    ${message}`;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 0.3s ease";
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// ── Variant change on product card ────────────────────────────
 function onVariantChange(select) {
   const card = select.closest(".product");
   const selected = select.options[select.selectedIndex];
@@ -401,14 +561,9 @@ function onVariantChange(select) {
   const discountEl = card.querySelector(".variant-discount");
 
   if (mrp && parseFloat(mrp) > parseFloat(price)) {
-    if (mrpEl) {
-      mrpEl.textContent = `Rs. ${mrp}`;
-      mrpEl.classList.remove("hidden");
-    }
+    if (mrpEl) { mrpEl.textContent = `Rs. ${mrp}`; mrpEl.classList.remove("hidden"); }
     if (discountEl) {
-      const pct = Math.round(
-        ((parseFloat(mrp) - parseFloat(price)) / parseFloat(mrp)) * 100
-      );
+      const pct = Math.round(((parseFloat(mrp) - parseFloat(price)) / parseFloat(mrp)) * 100);
       discountEl.textContent = `${pct}% OFF`;
       discountEl.classList.remove("hidden");
     }
@@ -422,21 +577,20 @@ function onVariantChange(select) {
   const qtySpan = card.querySelector(".qty-text");
   const outOfStockBtn = card.querySelector(".out-of-stock-btn");
 
-  if (outOfStockBtn) {
-    if (stock === 0) {
-      outOfStockBtn.classList.remove("hidden");
-      if (addBtn) addBtn.classList.add("hidden");
+  if (stock === 0) {
+    if (outOfStockBtn) outOfStockBtn.classList.remove("hidden");
+    if (addBtn) addBtn.classList.add("hidden");
+    if (counter) { counter.classList.add("hidden"); counter.classList.remove("flex"); }
+  } else {
+    if (outOfStockBtn) outOfStockBtn.classList.add("hidden");
+    if (counter && !counter.classList.contains("hidden")) {
+      counter.classList.add("hidden");
+      counter.classList.remove("flex");
+      if (addBtn) addBtn.classList.remove("hidden");
+      if (qtySpan) qtySpan.innerText = "1";
     } else {
-      outOfStockBtn.classList.add("hidden");
       if (addBtn) addBtn.classList.remove("hidden");
     }
-  }
-
-  if (counter && !counter.classList.contains("hidden")) {
-    counter.classList.add("hidden");
-    counter.classList.remove("flex");
-    if (addBtn) addBtn.classList.remove("hidden");
-    if (qtySpan) qtySpan.innerText = "1";
   }
 }
 
@@ -485,20 +639,16 @@ async function updateStatus(orderId, select) {
     };
     badge.className = `status-badge text-xs font-black px-3 py-1 rounded-full ${colorMap[status]}`;
     card.setAttribute("data-status", status);
+    showToast("Order status updated!", "green");
   } else {
-    alert("Failed to update status.");
+    showToast("Failed to update status.", "red");
     select.value = card.getAttribute("data-status");
   }
 }
 
 function filterOrders(status) {
-  const cards = document.querySelectorAll(".order-card");
-  cards.forEach((card) => {
-    if (status === "all" || card.getAttribute("data-status") === status) {
-      card.classList.remove("hidden");
-    } else {
-      card.classList.add("hidden");
-    }
+  document.querySelectorAll(".order-card").forEach((card) => {
+    card.classList.toggle("hidden", status !== "all" && card.getAttribute("data-status") !== status);
   });
 
   document.querySelectorAll(".filter-tab").forEach((btn) => {
@@ -507,11 +657,8 @@ function filterOrders(status) {
   });
 
   const activeTab = document.getElementById(`tab-${status}`);
-  activeTab.classList.add("bg-zinc-900", "text-white");
-  activeTab.classList.remove(
-    "bg-white",
-    "text-zinc-600",
-    "border",
-    "border-zinc-200"
-  );
+  if (activeTab) {
+    activeTab.classList.add("bg-zinc-900", "text-white");
+    activeTab.classList.remove("bg-white", "text-zinc-600", "border", "border-zinc-200");
+  }
 }

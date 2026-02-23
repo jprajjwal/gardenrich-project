@@ -19,22 +19,20 @@
             </a>
 
             <% if (!user || user.role !== 'ADMIN') { %>
-            <div class="hidden md:flex flex-1 mx-12 max-w-2xl">
-                <form action="/" method="GET" class="hidden md:flex flex-1 mx-12 max-w-2xl">
-                    <div class="relative w-full group">
-                        <input type="text" name="search" placeholder="Search for fresh products..."
-                            class="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all text-sm"
-                            value="<%= typeof query !== 'undefined' ? query : '' %>">
-                        <button type="submit"
-                            class="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-green-600 transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                            </svg>
-                        </button>
-                    </div>
-                </form>
-            </div>
+            <form action="/" method="GET" class="hidden md:flex flex-1 mx-12 max-w-2xl">
+                <div class="relative w-full group">
+                    <input type="text" name="search" placeholder="Search for fresh products..."
+                        class="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all text-sm"
+                        value="<%= typeof query !== 'undefined' ? query : '' %>">
+                    <button type="submit"
+                        class="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-green-600 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                </div>
+            </form>
             <% } %>
 
             <div class="flex items-center space-x-2">
@@ -64,15 +62,16 @@
                         </div>
 
                         <% if (user.role === 'ADMIN') { %>
-                        <!-- Admin only links -->
-                        <a href="/admin"
+
+                        <a href="/admin/dashboard"
                             class="flex items-center px-4 py-2.5 mx-2 text-sm text-zinc-700 font-semibold rounded-xl hover:bg-zinc-50 hover:text-green-700 transition-colors group">
                             <svg class="w-5 h-5 mr-3 text-zinc-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
                             </svg>
-                            Add Product
+                            Dashboard
                         </a>
+
                         <a href="/admin/orders"
                             class="flex items-center px-4 py-2.5 mx-2 text-sm text-zinc-700 font-semibold rounded-xl hover:bg-zinc-50 hover:text-green-700 transition-colors group">
                             <svg class="w-5 h-5 mr-3 text-zinc-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,7 +82,7 @@
                         </a>
 
                         <% } else { %>
-                        <!-- Customer only links -->
+
                         <a href="/profile"
                             class="flex items-center px-4 py-2.5 mx-2 text-sm text-zinc-700 font-semibold rounded-xl hover:bg-zinc-50 hover:text-green-700 transition-colors group">
                             <svg class="w-5 h-5 mr-3 text-zinc-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,6 +99,7 @@
                             </svg>
                             My Orders
                         </a>
+
                         <% } %>
 
                         <div class="mt-2 pt-2 border-t border-zinc-50">
@@ -126,7 +126,6 @@
                 </a>
                 <% } %>
 
-                <!-- Cart icon — hidden for admin -->
                 <% if (!user || user.role !== 'ADMIN') { %>
                 <a href="/cart" class="relative p-2 mr-2 text-zinc-700 hover:bg-zinc-50 rounded-full transition-all group">
                     <svg class="w-6 h-6 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,5 +145,4 @@
 
     <script src="/javascript/index.js"></script>
 </body>
-
 </html>
