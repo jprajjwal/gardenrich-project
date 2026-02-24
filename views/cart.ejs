@@ -11,6 +11,32 @@
 <body class="bg-zinc-50 font-sans antialiased text-zinc-900">
     <%- include("partials/header") %>
 
+    <%
+        const _baseShipping = parseFloat(shippingCost || 0);
+        const _freeAbove    = parseFloat(freeAbove || 0);
+        const _minOrder     = parseFloat(minOrder || 0);
+        const _subtotal     = parseFloat(total || 0);
+        const _shippingCost = (_freeAbove > 0 && _subtotal >= _freeAbove) ? 0 : _baseShipping;
+        const _finalTotal   = _subtotal + _shippingCost;
+        const _isFreeShipping  = _shippingCost === 0;
+        const _freeShippingGap = (_freeAbove > 0 && _subtotal < _freeAbove) ? (_freeAbove - _subtotal) : 0;
+        const _progressPct     = _freeAbove > 0 ? Math.min(100, (_subtotal / _freeAbove) * 100).toFixed(1) : 0;
+        // Discount hint values passed from server
+        const _discountCode     = discountCode || "";
+        const _discountType     = discountType || "none";
+        const _discountValue    = parseFloat(discountValue || 0);
+        const _discountMinOrder = parseFloat(discountMinOrder || 0);
+        const _hasActiveDiscount = _discountCode && _discountType !== "none";
+    %>
+
+    <%# Hidden data anchor — JS reads all thresholds from here %>
+    <span id="shippingCostValue"
+        data-shipping="<%= _shippingCost %>"
+        data-base-shipping="<%= _baseShipping %>"
+        data-free-above="<%= _freeAbove %>"
+        data-min-order="<%= _minOrder %>"
+        class="hidden"></span>
+
     <div class="max-w-7xl mx-auto px-6 py-10 pb-24">
 
         <a href="/" class="inline-flex items-center text-sm font-bold text-green-700 hover:text-green-800 mb-6 group transition-colors">
@@ -27,6 +53,43 @@
 
         <% if (cartItems.length > 0) { %>
 
+        <% if (_freeAbove > 0) { %>
+        <div id="freeShippingProgress"
+             class="mb-5 bg-white rounded-2xl border border-zinc-100 px-5 py-4 <%= _freeShippingGap === 0 ? 'hidden' : '' %>">
+            <div class="flex justify-between items-center mb-2">
+                <p class="text-xs font-black text-zinc-600">
+                    Add <span id="freeShippingAmount" class="text-green-600">Rs. <%= _freeShippingGap.toLocaleString('en-IN') %></span> more for FREE shipping!
+                </p>
+                <p id="freeShippingCounter" class="text-xs text-zinc-400 font-bold">
+                    Rs. <%= _subtotal.toLocaleString('en-IN') %> / Rs. <%= _freeAbove.toLocaleString('en-IN') %>
+                </p>
+            </div>
+            <div class="w-full bg-zinc-100 rounded-full h-2">
+                <div id="freeShippingBar" class="bg-green-500 h-2 rounded-full transition-all duration-300"
+                     style="width: <%= _progressPct %>%"></div>
+            </div>
+        </div>
+
+        <div id="freeShippingUnlocked"
+             class="mb-5 bg-green-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center gap-2 <%= _freeShippingGap === 0 ? '' : 'hidden' %>">
+            <svg class="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <p class="text-sm font-black text-green-700">🎉 You've unlocked FREE shipping!</p>
+        </div>
+        <% } %>
+
+        <div id="minOrderWarning"
+             class="mb-5 bg-orange-50 border border-orange-200 rounded-2xl px-5 py-3 flex items-center gap-2
+                    <%= (_minOrder > 0 && _subtotal < _minOrder) ? '' : 'hidden' %>">
+            <svg class="w-5 h-5 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <p class="text-sm font-bold text-orange-700">
+                Minimum order value is <strong>Rs. <%= _minOrder.toLocaleString('en-IN') %></strong>. Add more items to checkout.
+            </p>
+        </div>
+
         <div id="cartPageContainer" class="flex flex-col lg:flex-row gap-8">
 
             <!-- Cart Items -->
@@ -37,12 +100,10 @@
                     data-price="<%= item.price %>"
                     data-stock="<%= item.stock || 99 %>">
 
-                    <!-- Image -->
                     <div class="w-20 h-20 bg-zinc-100 rounded-xl overflow-hidden shrink-0">
                         <img src="<%= item.product_image %>" class="w-full h-full object-cover" alt="<%= item.product_name %>">
                     </div>
 
-                    <!-- Info -->
                     <div class="flex-1 min-w-0">
                         <% if (item.product_brand) { %>
                         <p class="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-0.5"><%= item.product_brand %></p>
@@ -65,7 +126,6 @@
                         <% } %>
                     </div>
 
-                    <!-- Subtotal (desktop) -->
                     <div class="hidden sm:block text-right shrink-0 mr-2">
                         <p class="text-[10px] font-black uppercase tracking-widest text-zinc-400">Subtotal</p>
                         <p class="item-subtotal font-black text-zinc-900 text-sm mt-0.5">
@@ -73,7 +133,6 @@
                         </p>
                     </div>
 
-                    <!-- Quantity Controls -->
                     <div class="flex items-center bg-zinc-900 text-white rounded-xl overflow-hidden shrink-0 shadow-md">
                         <button onclick="updateCartQty(this, -1)"
                             class="px-3 py-2.5 hover:bg-zinc-700 text-sm font-bold transition-colors leading-none select-none">−</button>
@@ -99,8 +158,7 @@
                                 <%= item.product_name %>
                                 <span class="summary-item-qty text-zinc-400 font-bold">×<%= item.quantity %></span>
                             </span>
-                            <span class="summary-item-total font-bold text-zinc-700 shrink-0"
-                                data-id="<%= item.product_id %>">
+                            <span class="summary-item-total font-bold text-zinc-700 shrink-0" data-id="<%= item.product_id %>">
                                 Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %>
                             </span>
                         </div>
@@ -110,15 +168,23 @@
                     <!-- Totals -->
                     <div class="space-y-3 text-sm border-t border-zinc-100 pt-4">
                         <div class="flex justify-between text-zinc-600">
-                            <span>Order Total</span>
-                            <span id="summaryOrderTotal" class="font-bold">
-                                Rs. <%= total.toLocaleString('en-IN') %>
-                            </span>
+                            <span>Subtotal</span>
+                            <span id="summaryOrderTotal" class="font-bold">Rs. <%= _subtotal.toLocaleString('en-IN') %></span>
                         </div>
+
+                        <!-- Discount row — hidden until code applied -->
+                        <div id="discountRow" class="hidden justify-between text-green-600">
+                            <span class="font-medium">Discount</span>
+                            <span id="discountAmount" class="font-black">-Rs. 0</span>
+                        </div>
+
                         <div class="flex justify-between text-zinc-600">
                             <span>Shipping</span>
-                            <span class="text-green-600 font-black">FREE</span>
+                            <span id="shippingDisplay" class="font-black <%= _isFreeShipping ? 'text-green-600' : 'text-zinc-900' %>">
+                                <% if (_isFreeShipping) { %>FREE<% } else { %>Rs. <%= _shippingCost.toLocaleString('en-IN') %><% } %>
+                            </span>
                         </div>
+
                         <div class="flex justify-between text-zinc-600">
                             <span>Taxes</span>
                             <span class="font-bold">Included</span>
@@ -129,17 +195,66 @@
                         <div class="flex justify-between items-center mb-1">
                             <span class="text-base font-black text-zinc-900">Total Amount</span>
                             <span id="summaryFinalTotal" class="text-2xl font-black text-zinc-900">
-                                Rs. <%= total.toLocaleString('en-IN') %>
+                                Rs. <%= _finalTotal.toLocaleString('en-IN') %>
                             </span>
                         </div>
                         <p class="text-right text-xs text-zinc-400">Inclusive of all taxes</p>
                     </div>
 
-                    <a href="/checkout">
-                        <button class="w-full bg-green-700 hover:bg-green-800 text-white py-4 rounded-xl font-black mt-6 transition-all shadow-lg shadow-green-100 active:scale-95 uppercase tracking-widest text-sm">
+                    <!-- Promo Code -->
+                    <div class="mt-4 pt-4 border-t border-zinc-100">
+                        <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Promo Code</p>
+
+                        <%# Active discount hint — shown below input so user knows the code %>
+                        <% if (_hasActiveDiscount) { %>
+                        <div class="mb-2 px-3 py-2 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A2 2 0 013 9.172V5a2 2 0 012-2z"/>
+                            </svg>
+                            <p class="text-[11px] font-bold text-green-700">
+                                Use code <button onclick="document.getElementById('discountCodeInput').value='<%= _discountCode %>'" class="font-black text-green-800 bg-green-100 px-1.5 py-0.5 rounded-md hover:bg-green-200 transition-colors"><%= _discountCode %></button>
+                                for <span class="font-black"><%= _discountType === 'percentage' ? _discountValue + '% off' : 'Rs. ' + _discountValue + ' off' %></span>
+                                <% if (_discountMinOrder > 0) { %><span class="text-green-600"> on orders above Rs. <%= _discountMinOrder %></span><% } %>
+                            </p>
+                        </div>
+                        <% } %>
+
+                        <div id="discountInputRow" class="flex gap-2">
+                            <input type="text" id="discountCodeInput" placeholder="Enter code"
+                                class="flex-1 bg-zinc-50 border border-zinc-200 p-2.5 rounded-xl text-sm font-bold uppercase focus:outline-none focus:border-green-500 transition-all tracking-widest"
+                                oninput="this.value = this.value.toUpperCase()">
+                            <button onclick="applyDiscount()"
+                                class="px-4 py-2.5 bg-zinc-900 hover:bg-green-700 text-white text-xs font-black rounded-xl transition-all active:scale-95">
+                                Apply
+                            </button>
+                        </div>
+                        <div id="discountMsg" class="mt-2 text-xs font-bold hidden"></div>
+
+                        <div id="discountApplied" class="hidden items-center justify-between bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 mt-2">
+                            <div>
+                                <p class="text-xs font-black text-green-700">Discount Applied! 🎉</p>
+                                <p class="text-[10px] text-green-600 mt-0.5" id="discountAppliedLabel"></p>
+                            </div>
+                            <button onclick="removeDiscount()" class="text-zinc-400 hover:text-red-400 transition-colors ml-3">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button id="checkoutBtn" onclick="proceedToCheckout()"
+                        class="w-full py-4 rounded-xl font-black mt-6 uppercase tracking-widest text-sm transition-all
+                            <%= (_minOrder > 0 && _subtotal < _minOrder)
+                                ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed'
+                                : 'bg-green-700 hover:bg-green-800 text-white shadow-lg shadow-green-100 active:scale-95' %>"
+                        <%= (_minOrder > 0 && _subtotal < _minOrder) ? 'disabled' : '' %>>
+                        <% if (_minOrder > 0 && _subtotal < _minOrder) { %>
+                            Min. Order Rs. <%= _minOrder.toLocaleString('en-IN') %>
+                        <% } else { %>
                             Proceed to Checkout
-                        </button>
-                    </a>
+                        <% } %>
+                    </button>
 
                     <!-- Trust Badges -->
                     <div class="mt-5 pt-4 border-t border-zinc-100 flex items-center justify-center gap-4 text-xs text-zinc-400 font-medium">
@@ -153,7 +268,7 @@
                             <svg class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
                             </svg>
-                            Free Delivery
+                            Fast Delivery
                         </span>
                         <span class="flex items-center gap-1">
                             <svg class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +283,6 @@
 
         <% } else { %>
 
-        <!-- Empty Cart State -->
         <div id="cartPageContainer" class="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-dashed border-zinc-200 text-center">
             <div class="inline-flex items-center justify-center w-24 h-24 bg-zinc-100 rounded-full mb-6">
                 <svg class="w-12 h-12 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,5 +303,4 @@
     <script src="/javascript/index.js"></script>
     <%- include("partials/footer") %>
 </body>
-
 </html>

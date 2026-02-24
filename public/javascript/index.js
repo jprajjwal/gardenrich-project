@@ -178,18 +178,105 @@ function updateBadge(totalItems) {
   setTimeout(() => badge.classList.remove("scale-110"), 200);
 }
 
-function updateOrderSummary() {
-  let total = 0;
+// ── Cart summary helpers ──────────────────────────────────────
+function getCartSubtotal() {
+  let subtotal = 0;
   document.querySelectorAll(".cart-item").forEach((item) => {
     const price = parseFloat(item.getAttribute("data-price"));
     const qty = parseInt(item.querySelector(".qty-text")?.innerText || 0);
-    if (!isNaN(price) && !isNaN(qty)) total += price * qty;
+    if (!isNaN(price) && !isNaN(qty)) subtotal += price * qty;
   });
+  return subtotal;
+}
 
-  const formatted = "Rs. " + total.toLocaleString("en-IN");
-  document.querySelectorAll("#summaryOrderTotal, #summaryFinalTotal, #cartTotal").forEach(
-    (el) => { if (el) el.innerText = formatted; }
-  );
+function getAnchor() {
+  return document.getElementById("shippingCostValue");
+}
+
+function getAppliedDiscount() {
+  const el = document.getElementById("discountAmount");
+  if (!el || el.closest("#discountRow")?.classList.contains("hidden")) return 0;
+  // BUG FIX: "Rs. 104" — the dot in "Rs." was kept by [^0-9.] regex → ".104" → parsed as 0.104
+  // Fix: only keep digits, no dot
+  const raw = el.textContent.replace(/[^0-9]/g, "");
+  return parseFloat(raw) || 0;
+}
+
+// ── Master recalc ─────────────────────────────────────────────
+function updateOrderSummary() {
+  const anchor    = getAnchor();
+  const baseShip  = anchor ? parseFloat(anchor.getAttribute("data-base-shipping") || 0) : 0;
+  const freeAbove = anchor ? parseFloat(anchor.getAttribute("data-free-above") || 0) : 0;
+  const minOrder  = anchor ? parseFloat(anchor.getAttribute("data-min-order") || 0) : 0;
+
+  const subtotal  = getCartSubtotal();
+  const discount  = getAppliedDiscount();
+
+  const shipping  = (freeAbove > 0 && subtotal >= freeAbove) ? 0 : baseShip;
+  const total     = Math.max(0, subtotal + shipping - discount);
+
+  // 1. Subtotal & final total
+  const subtotalEl = document.getElementById("summaryOrderTotal");
+  if (subtotalEl) subtotalEl.innerText = "Rs. " + subtotal.toLocaleString("en-IN");
+
+  const finalEl = document.getElementById("summaryFinalTotal");
+  if (finalEl) finalEl.innerText = "Rs. " + total.toLocaleString("en-IN");
+
+  // 2. Shipping line
+  const shippingDisplay = document.getElementById("shippingDisplay");
+  if (shippingDisplay) {
+    if (shipping === 0) {
+      shippingDisplay.textContent = "FREE";
+      shippingDisplay.className = "font-black text-green-600";
+    } else {
+      shippingDisplay.textContent = "Rs. " + shipping.toLocaleString("en-IN");
+      shippingDisplay.className = "font-black text-zinc-900";
+    }
+  }
+
+  // 3. Free shipping progress bar & unlocked banner
+  if (freeAbove > 0) {
+    const progressPanel  = document.getElementById("freeShippingProgress");
+    const unlockedBanner = document.getElementById("freeShippingUnlocked");
+    const bar            = document.getElementById("freeShippingBar");
+    const amountEl       = document.getElementById("freeShippingAmount");
+    const counterEl      = document.getElementById("freeShippingCounter");
+
+    if (subtotal >= freeAbove) {
+      if (progressPanel)  progressPanel.classList.add("hidden");
+      if (unlockedBanner) unlockedBanner.classList.remove("hidden");
+    } else {
+      if (progressPanel)  progressPanel.classList.remove("hidden");
+      if (unlockedBanner) unlockedBanner.classList.add("hidden");
+
+      const gap = freeAbove - subtotal;
+      const pct = Math.min(100, (subtotal / freeAbove) * 100).toFixed(1);
+
+      if (bar)       bar.style.width = pct + "%";
+      if (amountEl)  amountEl.textContent = "Rs. " + gap.toLocaleString("en-IN");
+      if (counterEl) counterEl.textContent =
+        "Rs. " + subtotal.toLocaleString("en-IN") + " / Rs. " + freeAbove.toLocaleString("en-IN");
+    }
+  }
+
+  // 4. Min order warning & checkout button
+  const minWarning  = document.getElementById("minOrderWarning");
+  const checkoutBtn = document.getElementById("checkoutBtn");
+
+  if (minOrder > 0) {
+    const belowMin = subtotal < minOrder;
+    if (minWarning)  minWarning.classList.toggle("hidden", !belowMin);
+    if (checkoutBtn) {
+      checkoutBtn.disabled = belowMin;
+      if (belowMin) {
+        checkoutBtn.textContent = "Min. Order Rs. " + minOrder.toLocaleString("en-IN");
+        checkoutBtn.className = "w-full py-4 rounded-xl font-black mt-6 uppercase tracking-widest text-sm bg-zinc-300 text-zinc-500 cursor-not-allowed";
+      } else {
+        checkoutBtn.textContent = "Proceed to Checkout";
+        checkoutBtn.className = "w-full py-4 rounded-xl font-black mt-6 uppercase tracking-widest text-sm transition-all bg-green-700 hover:bg-green-800 text-white shadow-lg shadow-green-100 active:scale-95";
+      }
+    }
+  }
 }
 
 function checkEmptyCart() {
@@ -285,7 +372,6 @@ async function openEditModal(productId) {
   document.getElementById("editName").value = card.getAttribute("data-name") || "";
   document.getElementById("editCategory").value = card.getAttribute("data-category") || "";
 
-  // Reset image UI
   const preview = document.getElementById("editImagePreview");
   const placeholder = document.getElementById("editImagePlaceholder");
   preview.classList.add("hidden");
@@ -302,10 +388,8 @@ async function openEditModal(productId) {
     }
   });
 
-  // Clear any previously added new variant rows
   document.getElementById("newVariantRows").innerHTML = "";
 
-  // Load existing variants from server
   const variantRowsEl = document.getElementById("editVariantRows");
   variantRowsEl.innerHTML = `
     <div class="flex items-center justify-center py-4 gap-2 text-zinc-400">
@@ -332,28 +416,24 @@ async function openEditModal(productId) {
           <div class="col-span-3">
             <div class="relative">
               <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
-              <input type="number"
-                class="variant-price-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
+              <input type="number" class="variant-price-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
                 data-variant-id="${v.id}" value="${v.price ?? ''}" min="0" placeholder="Price">
             </div>
           </div>
           <div class="col-span-3">
             <div class="relative">
               <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
-              <input type="number"
-                class="variant-mrp-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
+              <input type="number" class="variant-mrp-input w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all"
                 data-variant-id="${v.id}" value="${v.mrp ?? ''}" min="0" placeholder="MRP">
             </div>
           </div>
           <div class="col-span-2">
-            <input type="number"
-              class="variant-stock-input w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all text-center"
+            <input type="number" class="variant-stock-input w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all text-center"
               data-variant-id="${v.id}" value="${v.stock ?? 0}" min="0" placeholder="Stock">
           </div>
           <div class="col-span-1 flex justify-center">
             <button type="button" onclick="removeExistingVariant(this, '${v.id}')"
-              class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all"
-              title="Remove variant">
+              class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
               </svg>
@@ -363,8 +443,7 @@ async function openEditModal(productId) {
       `).join("");
     }
   } catch (err) {
-    variantRowsEl.innerHTML = `<p class="text-xs text-red-400 text-center py-3">Failed to load variants. Try again.</p>`;
-    console.error("Variant load error:", err);
+    variantRowsEl.innerHTML = `<p class="text-xs text-red-400 text-center py-3">Failed to load variants.</p>`;
   }
 
   const modal = document.getElementById("editModal");
@@ -379,66 +458,46 @@ function addNewVariantRow() {
   row.innerHTML = `
     <div class="col-span-3">
       <div class="grid grid-cols-2 gap-1">
-        <input type="number" class="new-variant-qty w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center transition-all" placeholder="500" min="0">
-        <select class="new-variant-unit w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold appearance-none cursor-pointer transition-all">
-          <option value="ml">ml</option>
-          <option value="L">L</option>
-          <option value="g">g</option>
-          <option value="kg">kg</option>
-          <option value="pcs">pcs</option>
-          <option value="dozen">Dozen</option>
-          <option value="pack">Pack</option>
-          <option value="bottle">Bottle</option>
-          <option value="box">Box</option>
-          <option value="pouch">Pouch</option>
+        <input type="number" class="new-variant-qty w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center" placeholder="500" min="0">
+        <select class="new-variant-unit w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold appearance-none cursor-pointer">
+          <option>ml</option><option>L</option><option>g</option><option>kg</option>
+          <option>pcs</option><option>dozen</option><option>pack</option>
+          <option>bottle</option><option>box</option><option>pouch</option>
         </select>
       </div>
     </div>
-    <div class="col-span-3">
-      <div class="relative">
-        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
-        <input type="number" class="new-variant-price w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all" placeholder="Price" min="0">
-      </div>
-    </div>
-    <div class="col-span-3">
-      <div class="relative">
-        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
-        <input type="number" class="new-variant-mrp w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold transition-all" placeholder="MRP" min="0">
-      </div>
-    </div>
+    <div class="col-span-3"><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+      <input type="number" class="new-variant-price w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold" placeholder="Price" min="0">
+    </div></div>
+    <div class="col-span-3"><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400">₹</span>
+      <input type="number" class="new-variant-mrp w-full bg-white border border-zinc-200 p-2 pl-5 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold" placeholder="MRP" min="0">
+    </div></div>
     <div class="col-span-2">
-      <input type="number" class="new-variant-stock w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center transition-all" placeholder="0" min="0">
+      <input type="number" class="new-variant-stock w-full bg-white border border-zinc-200 p-2 rounded-lg focus:outline-none focus:border-green-500 text-xs font-bold text-center" placeholder="0" min="0">
     </div>
     <div class="col-span-1 flex justify-center">
       <button type="button" onclick="this.closest('.new-variant-row').remove()"
-        class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all">
+        class="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
-    </div>
-  `;
+    </div>`;
   container.appendChild(row);
 }
 
-// Track variants marked for deletion
 const variantsToDelete = [];
 
 function removeExistingVariant(btn, variantId) {
   const row = btn.closest(".existing-variant-row");
   row.style.opacity = "0";
-  row.style.transform = "scale(0.97)";
   row.style.transition = "all 0.2s ease";
-  setTimeout(() => {
-    row.remove();
-    variantsToDelete.push(variantId);
-  }, 200);
+  setTimeout(() => { row.remove(); variantsToDelete.push(variantId); }, 200);
 }
 
 function closeEditModal() {
-  const modal = document.getElementById("editModal");
-  modal.classList.add("hidden");
-  modal.classList.remove("flex");
+  document.getElementById("editModal").classList.add("hidden");
+  document.getElementById("editModal").classList.remove("flex");
 }
 
 async function submitEdit() {
@@ -447,12 +506,8 @@ async function submitEdit() {
   const category = document.getElementById("editCategory").value;
   const imageFile = document.getElementById("editImage").files[0];
 
-  if (!name) {
-    showToast("Product name cannot be empty.", "red");
-    return;
-  }
+  if (!name) { showToast("Product name cannot be empty.", "red"); return; }
 
-  // Collect existing variant updates
   const variantUpdates = [];
   document.querySelectorAll(".variant-price-input").forEach((priceInput) => {
     const variantId = priceInput.getAttribute("data-variant-id");
@@ -466,7 +521,6 @@ async function submitEdit() {
     });
   });
 
-  // Collect new variants
   const newVariants = [];
   document.querySelectorAll(".new-variant-row").forEach((row) => {
     const qty = row.querySelector(".new-variant-qty").value;
@@ -474,15 +528,7 @@ async function submitEdit() {
     const price = row.querySelector(".new-variant-price").value;
     const mrp = row.querySelector(".new-variant-mrp").value;
     const stock = row.querySelector(".new-variant-stock").value;
-
-    if (qty && price) {
-      newVariants.push({
-        weight: `${qty} ${unit}`,
-        price: parseFloat(price) || 0,
-        mrp: mrp !== "" ? parseFloat(mrp) : null,
-        stock: parseInt(stock) || 0,
-      });
-    }
+    if (qty && price) newVariants.push({ weight: `${qty} ${unit}`, price: parseFloat(price)||0, mrp: mrp?parseFloat(mrp):null, stock: parseInt(stock)||0 });
   });
 
   const formData = new FormData();
@@ -497,14 +543,10 @@ async function submitEdit() {
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
 
   try {
-    const response = await fetch(`/admin/edit-product/${id}`, {
-      method: "POST",
-      body: formData,
-    });
+    const response = await fetch(`/admin/edit-product/${id}`, { method: "POST", body: formData });
     const data = await response.json();
-
     if (response.ok) {
-      variantsToDelete.length = 0; // clear deletion list
+      variantsToDelete.length = 0;
       closeEditModal();
       showToast("Product updated successfully!", "green");
       setTimeout(() => location.reload(), 1200);
@@ -513,7 +555,6 @@ async function submitEdit() {
     }
   } catch (err) {
     showToast("Server error. Please try again.", "red");
-    console.error("submitEdit error:", err);
   } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Changes"; }
   }
@@ -525,14 +566,10 @@ function showToast(message, color = "green") {
 
   const toast = document.createElement("div");
   toast.id = "appToast";
-  toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${
-    color === "green" ? "bg-green-600" : "bg-red-500"
-  } text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl z-50 flex items-center gap-2`;
+  toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${color === "green" ? "bg-green-600" : "bg-red-500"} text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl z-50 flex items-center gap-2`;
   toast.innerHTML = `
     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      ${color === "green"
-        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>'
-        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>'}
+      ${color === "green" ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>'}
     </svg>
     ${message}`;
   document.body.appendChild(toast);
@@ -584,36 +621,13 @@ function onVariantChange(select) {
   } else {
     if (outOfStockBtn) outOfStockBtn.classList.add("hidden");
     if (counter && !counter.classList.contains("hidden")) {
-      counter.classList.add("hidden");
-      counter.classList.remove("flex");
+      counter.classList.add("hidden"); counter.classList.remove("flex");
       if (addBtn) addBtn.classList.remove("hidden");
       if (qtySpan) qtySpan.innerText = "1";
     } else {
       if (addBtn) addBtn.classList.remove("hidden");
     }
   }
-}
-
-// ── Address helpers ───────────────────────────────────────────
-function selectAddress(label) {
-  document.querySelectorAll('[name="selected_address"]').forEach((r) => {
-    r.closest("label").classList.remove("border-green-600", "bg-green-50");
-    r.closest("label").classList.add("border-zinc-200", "bg-white");
-  });
-  label.classList.add("border-green-600", "bg-green-50");
-  label.classList.remove("border-zinc-200", "bg-white");
-}
-
-function showNewAddressForm() {
-  document.getElementById("newAddressForm").classList.remove("hidden");
-  document.getElementById("savedAddresses").classList.add("hidden");
-  document.getElementById("addNewBtn").classList.add("hidden");
-}
-
-function cancelNewAddress() {
-  document.getElementById("newAddressForm").classList.add("hidden");
-  document.getElementById("savedAddresses").classList.remove("hidden");
-  document.getElementById("addNewBtn").classList.remove("hidden");
 }
 
 // ── Admin order status ────────────────────────────────────────
@@ -630,13 +644,7 @@ async function updateStatus(orderId, select) {
 
   if (response.ok) {
     badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-    const colorMap = {
-      pending: "bg-yellow-100 text-yellow-700",
-      confirmed: "bg-blue-100 text-blue-700",
-      shipped: "bg-purple-100 text-purple-700",
-      delivered: "bg-green-100 text-green-700",
-      cancelled: "bg-red-100 text-red-700",
-    };
+    const colorMap = { pending: "bg-yellow-100 text-yellow-700", confirmed: "bg-blue-100 text-blue-700", shipped: "bg-purple-100 text-purple-700", delivered: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700" };
     badge.className = `status-badge text-xs font-black px-3 py-1 rounded-full ${colorMap[status]}`;
     card.setAttribute("data-status", status);
     showToast("Order status updated!", "green");
@@ -650,15 +658,85 @@ function filterOrders(status) {
   document.querySelectorAll(".order-card").forEach((card) => {
     card.classList.toggle("hidden", status !== "all" && card.getAttribute("data-status") !== status);
   });
-
   document.querySelectorAll(".filter-tab").forEach((btn) => {
     btn.classList.remove("bg-zinc-900", "text-white");
     btn.classList.add("bg-white", "text-zinc-600", "border", "border-zinc-200");
   });
-
   const activeTab = document.getElementById(`tab-${status}`);
   if (activeTab) {
     activeTab.classList.add("bg-zinc-900", "text-white");
     activeTab.classList.remove("bg-white", "text-zinc-600", "border", "border-zinc-200");
+  }
+}
+
+// ── Discount code (cart page) ─────────────────────────────────
+let appliedDiscount = 0;
+
+async function applyDiscount() {
+  const code = document.getElementById("discountCodeInput").value.trim();
+  const msg = document.getElementById("discountMsg");
+  if (!code) return;
+
+  const subtotal = getCartSubtotal();
+
+  try {
+    const res = await fetch("/apply-discount", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, orderTotal: subtotal }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      msg.textContent = data.error;
+      msg.className = "mt-2 text-xs font-bold text-red-500";
+      msg.classList.remove("hidden");
+      return;
+    }
+
+    appliedDiscount = data.discountAmount;
+    msg.classList.add("hidden");
+
+    document.getElementById("discountInputRow").classList.add("hidden");
+    document.getElementById("discountApplied").classList.remove("hidden");
+    document.getElementById("discountApplied").classList.add("flex");
+    document.getElementById("discountAppliedLabel").textContent =
+      data.discountType === "percentage"
+        ? `${data.discountValue}% off applied`
+        : `Rs. ${data.discountAmount} off applied`;
+
+    document.getElementById("discountRow").classList.remove("hidden");
+    document.getElementById("discountRow").classList.add("flex");
+    document.getElementById("discountAmount").textContent =
+      `-Rs. ${data.discountAmount.toLocaleString("en-IN")}`;
+
+    updateOrderSummary();
+  } catch (e) {
+    msg.textContent = "Server error. Try again.";
+    msg.className = "mt-2 text-xs font-bold text-red-500";
+    msg.classList.remove("hidden");
+  }
+}
+
+function removeDiscount() {
+  appliedDiscount = 0;
+  document.getElementById("discountCodeInput").value = "";
+  document.getElementById("discountInputRow").classList.remove("hidden");
+  document.getElementById("discountApplied").classList.add("hidden");
+  document.getElementById("discountApplied").classList.remove("flex");
+  document.getElementById("discountRow").classList.add("hidden");
+  document.getElementById("discountRow").classList.remove("flex");
+  document.getElementById("discountAmount").textContent = "-Rs. 0";
+  updateOrderSummary();
+}
+
+function proceedToCheckout() {
+  const btn = document.getElementById("checkoutBtn");
+  if (btn && btn.disabled) return;
+  if (appliedDiscount > 0) {
+    const code = document.getElementById("discountCodeInput").value.trim();
+    window.location.href = `/checkout?applied_code=${encodeURIComponent(code)}&discount=${appliedDiscount}`;
+  } else {
+    window.location.href = "/checkout";
   }
 }

@@ -25,9 +25,26 @@
                 </div>
 
                 <div class="bg-white p-8 rounded-3xl border border-zinc-100 shadow-sm">
-                    <h3 class="font-black text-xl mb-3">Free Shipping</h3>
-                    <p class="text-zinc-600 text-sm leading-relaxed">We are proud to offer Free Shipping on all orders nationwide. The price you see is exactly what you pay.</p>
+                    <h3 class="font-black text-xl mb-3">Shipping Charges</h3>
+                    <% 
+                        const shippingCost = parseFloat(settings?.shipping_cost || 0);
+                        const freeAbove = parseFloat(settings?.free_shipping_above || 0);
+                    %>
+                    <% if (shippingCost === 0) { %>
+                        <p class="text-zinc-600 text-sm leading-relaxed">We are proud to offer <strong>Free Shipping</strong> on all orders nationwide. The price you see is exactly what you pay.</p>
+                    <% } else if (freeAbove > 0) { %>
+                        <p class="text-zinc-600 text-sm leading-relaxed">A shipping charge of <strong>Rs. <%= shippingCost %></strong> applies on orders below <strong>Rs. <%= freeAbove %></strong>. Orders above Rs. <%= freeAbove %> enjoy <strong class="text-green-600">Free Shipping</strong>!</p>
+                    <% } else { %>
+                        <p class="text-zinc-600 text-sm leading-relaxed">A flat shipping charge of <strong>Rs. <%= shippingCost %></strong> applies to all orders.</p>
+                    <% } %>
                 </div>
+
+                <% if (parseFloat(settings?.minimum_order_value || 0) > 0) { %>
+                <div class="bg-white p-8 rounded-3xl border border-zinc-100 shadow-sm">
+                    <h3 class="font-black text-xl mb-3">Minimum Order</h3>
+                    <p class="text-zinc-600 text-sm leading-relaxed">A minimum order value of <strong>Rs. <%= settings.minimum_order_value %></strong> is required to place an order.</p>
+                </div>
+                <% } %>
             </div>
         </div>
     </div>

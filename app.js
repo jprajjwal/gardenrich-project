@@ -1,5 +1,4 @@
 require("dotenv").config();
-require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const { createClient } = require("@supabase/supabase-js");
@@ -560,7 +559,7 @@ app.post("/reset-password", async (req, res) => {
 
 // ── Admin ─────────────────────────────────────────────────────
 app.get("/admin", isAdmin, async (req, res) => {
-    res.redirect("/admin/dashboard");
+  res.redirect("/admin/dashboard");
 });
 
 app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, res) => {
@@ -643,210 +642,77 @@ app.post("/admin/add-product", isAdmin, upload.single("imageFile"), async (req, 
   }
 });
 
-// GET variants for edit modal
-app.get("/admin/product-variants/:productId", isAdmin, async (req, res) => {
-    try {
-        const { data: variants, error } = await supabase
-            .from("product_variants")
-            .select("id, weight, price, mrp, stock")
-            .eq("product_id", req.params.productId)
-            .order("id", { ascending: true });
-
-        if (error) throw error;
-        res.json({ variants: variants || [] });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (req, res) => {
-    try {
-        const productId = parseInt(req.params.id);
-        const { name, category, variantUpdates, newVariants, deleteVariants } = req.body;
+  try {
+    const productId = parseInt(req.params.id);
+    const { name, category } = req.body;
 
-        let updateData = { name, category };
+    let updateData = { name, category };
 
-        // Optional image upload
-        if (req.file) {
-            const fileName = `${Date.now()}-${req.file.originalname}`;
-            const { error: uploadError } = await supabase.storage
-                .from("product-images")
-                .upload(fileName, req.file.buffer, {
-                    contentType: req.file.mimetype,
-                    upsert: false,
-                });
-            if (uploadError) throw uploadError;
+    if (req.file) {
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
 
-            const { data: urlData } = supabase.storage
-                .from("product-images")
-                .getPublicUrl(fileName);
-            updateData.image = urlData.publicUrl;
-        }
+      const { data: urlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(fileName);
 
-        // Update product
-        const { error: productError } = await supabase
-            .from("products")
-            .update(updateData)
-            .eq("id", productId);
-        if (productError) throw productError;
-
-        // Update existing variants
-        if (variantUpdates) {
-            const updates = JSON.parse(variantUpdates);
-            for (const v of updates) {
-                const { error } = await supabase
-                    .from("product_variants")
-                    .update({
-                        price: v.price,
-                        mrp: v.mrp,
-                        stock: v.stock,
-                    })
-                    .eq("id", parseInt(v.id));
-                if (error) throw error;
-            }
-        }
-
-        // Insert new variants
-        if (newVariants) {
-            const toInsert = JSON.parse(newVariants);
-            if (toInsert.length > 0) {
-                const inserts = toInsert.map(v => ({
-                    product_id: productId,
-                    weight: v.weight,
-                    price: v.price,
-                    mrp: v.mrp,
-                    stock: v.stock,
-                }));
-                const { error } = await supabase
-                    .from("product_variants")
-                    .insert(inserts);
-                if (error) throw error;
-            }
-        }
-
-        // Delete removed variants
-        if (deleteVariants) {
-            const toDelete = JSON.parse(deleteVariants);
-            if (toDelete.length > 0) {
-                const { error } = await supabase
-                    .from("product_variants")
-                    .delete()
-                    .in("id", toDelete.map(id => parseInt(id)));
-                if (error) throw error;
-            }
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Edit Product Error:", err.message);
-        res.status(500).json({ error: err.message });
+      updateData.image = urlData.publicUrl;
     }
-});
 
-// GET dashboard
-app.get("/admin/dashboard", isAdmin, async (req, res) => {
-    const { data: categories } = await supabase
-        .from("categories")
-        .select("*")
-        .order("id", { ascending: true });
-    res.render("admin-dashboard", { categories: categories || [] });
-});
+    const { error } = await supabase
+      .from("products")
+      .update(updateData)
+      .eq("id", productId);
 
-// Category counts
-app.get("/admin/categories/counts", isAdmin, async (req, res) => {
-    try {
-        const { data: categories } = await supabase.from("categories").select("id, slug");
-        const counts = {};
-        for (const cat of categories || []) {
-            const { count } = await supabase
-                .from("products")
-                .select("*", { count: "exact", head: true })
-                .eq("category", cat.slug);
-            counts[cat.id] = count || 0;
-        }
-        res.json({ counts });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (error) throw error;
+
+    // ── Update variant stock if provided ──────────────────────
+    // Body may contain variantId[] and variantStock[] arrays
+    const rawVariantIds = req.body["variantId[]"] || req.body.variantId;
+    const rawVariantStocks = req.body["variantStock[]"] || req.body.variantStock;
+
+    if (rawVariantIds && rawVariantStocks) {
+      const variantIds = Array.isArray(rawVariantIds) ? rawVariantIds : [rawVariantIds];
+      const variantStocks = Array.isArray(rawVariantStocks) ? rawVariantStocks : [rawVariantStocks];
+
+      await Promise.all(
+        variantIds.map(async (vid, i) => {
+          const newStock = parseInt(variantStocks[i], 10);
+          if (isNaN(newStock) || newStock < 0) return;
+          const variantId = parseInt(vid, 10);
+          console.log(`Updating variant ${variantId} stock → ${newStock}`);
+
+          // Try RPC first (SECURITY DEFINER bypasses RLS)
+          const { error: rpcErr } = await supabase.rpc("update_variant_stock", {
+            p_variant_id: variantId,
+            p_new_stock: newStock,
+          });
+
+          if (rpcErr) {
+            console.error(`RPC failed for variant ${variantId}: ${rpcErr.message} — trying direct update`);
+            // Fallback: direct update (works if RLS allows or service key is set)
+            const { error: directErr } = await supabase
+              .from("product_variants")
+              .update({ stock: newStock })
+              .eq("id", variantId);
+            if (directErr) console.error(`Direct update also failed: ${directErr.message}`);
+          }
+        })
+      );
     }
-});
 
-// Add category — slug auto-generated from name
-app.post("/admin/categories/add", isAdmin, async (req, res) => {
-    try {
-        const { name } = req.body;
-        if (!name) return res.status(400).json({ error: "Category name is required." });
-
-        // Auto generate slug from name
-        const slug = name.toLowerCase().trim()
-            .replace(/[^a-z0-9\s-]/g, "")
-            .replace(/\s+/g, "-")
-            .replace(/-+/g, "-");
-
-        // Check duplicate
-        const { data: existing } = await supabase
-            .from("categories")
-            .select("id")
-            .eq("slug", slug)
-            .single();
-
-        if (existing) return res.status(400).json({ error: `Category "${name}" already exists.` });
-
-        const { data, error } = await supabase
-            .from("categories")
-            .insert([{ name: name.trim(), slug }])
-            .select()
-            .single();
-
-        if (error) throw error;
-        res.json({ success: true, category: data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Rename category
-app.post("/admin/categories/rename/:id", isAdmin, async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const { name } = req.body;
-        if (!name) return res.status(400).json({ error: "Name is required." });
-
-        const { error } = await supabase
-            .from("categories")
-            .update({ name: name.trim() })
-            .eq("id", id);
-
-        if (error) throw error;
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Delete category
-app.delete("/admin/categories/:id", isAdmin, async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-
-        const { data: cat } = await supabase
-            .from("categories")
-            .select("slug, name")
-            .eq("id", id)
-            .single();
-
-        if (!cat) return res.status(404).json({ error: "Category not found." });
-        if (cat.slug === "all") return res.status(400).json({ error: "Cannot delete 'All Products'." });
-
-        // Move products to 'all'
-        await supabase.from("products").update({ category: "all" }).eq("category", cat.slug);
-
-        const { error } = await supabase.from("categories").delete().eq("id", id);
-        if (error) throw error;
-
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Edit Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
@@ -945,6 +811,194 @@ app.get("/admin/settings", isAdmin, async (req, res) => {
   res.render("admin-settings", { shippingCost });
 });
 
+// ── Admin: Product Variants (for edit modal) ─────────────────
+app.get("/admin/product-variants/:productId", isAdmin, async (req, res) => {
+    try {
+        const { data: variants, error } = await supabase
+            .from("product_variants")
+            .select("id, weight, price, mrp, stock")
+            .eq("product_id", req.params.productId)
+            .order("id", { ascending: true });
+        if (error) throw error;
+        res.json({ variants: variants || [] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Admin: Dashboard ─────────────────────────────────────────
+app.get("/admin/dashboard", isAdmin, async (req, res) => {
+    const { data: categories } = await supabase
+        .from("categories")
+        .select("*")
+        .order("id", { ascending: true });
+
+    const { data: settingsRows } = await supabase.from("settings").select("key, value");
+    const settings = {};
+    (settingsRows || []).forEach(s => { settings[s.key] = s.value; });
+
+    res.render("admin-dashboard", { categories: categories || [], settings });
+});
+
+// ── Admin: Settings API ───────────────────────────────────────
+app.get("/admin/settings/data", isAdmin, async (req, res) => {
+    try {
+        const { data: settings } = await supabase.from("settings").select("key, value");
+        const map = {};
+        (settings || []).forEach(s => { map[s.key] = s.value; });
+        res.json({ settings: map });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/admin/settings/save", isAdmin, async (req, res) => {
+    try {
+        const {
+            shipping_cost, free_shipping_above, minimum_order_value,
+            discount_type, discount_value, discount_code,
+            discount_min_order, discount_expiry,
+        } = req.body;
+
+        const upserts = [
+            { key: "shipping_cost", value: String(parseFloat(shipping_cost) || 0) },
+            { key: "free_shipping_above", value: String(parseFloat(free_shipping_above) || 0) },
+            { key: "minimum_order_value", value: String(parseFloat(minimum_order_value) || 0) },
+            { key: "discount_type", value: discount_type || "none" },
+            { key: "discount_value", value: String(parseFloat(discount_value) || 0) },
+            { key: "discount_code", value: (discount_code || "").trim().toUpperCase() },
+            { key: "discount_min_order", value: String(parseFloat(discount_min_order) || 0) },
+            { key: "discount_expiry", value: discount_expiry || "" },
+        ];
+
+        for (const row of upserts) {
+            await supabase.from("settings").upsert(row, { onConflict: "key" });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Admin: Category counts ────────────────────────────────────
+app.get("/admin/categories/counts", isAdmin, async (req, res) => {
+    try {
+        const { data: categories } = await supabase.from("categories").select("id, slug");
+        const counts = {};
+        for (const cat of categories || []) {
+            const { count } = await supabase
+                .from("products")
+                .select("*", { count: "exact", head: true })
+                .eq("category", cat.slug);
+            counts[cat.id] = count || 0;
+        }
+        res.json({ counts });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Admin: Add category ───────────────────────────────────────
+app.post("/admin/categories/add", isAdmin, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: "Category name is required." });
+
+        const slug = name.toLowerCase().trim()
+            .replace(/[^a-z0-9\s-]/g, "")
+            .replace(/\s+/g, "-")
+            .replace(/-+/g, "-");
+
+        const { data: existing } = await supabase
+            .from("categories").select("id").eq("slug", slug).single();
+
+        if (existing) return res.status(400).json({ error: `Category "${name}" already exists.` });
+
+        const { data, error } = await supabase
+            .from("categories")
+            .insert([{ name: name.trim(), slug }])
+            .select().single();
+
+        if (error) throw error;
+        res.json({ success: true, category: data });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Admin: Rename category ────────────────────────────────────
+app.post("/admin/categories/rename/:id", isAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: "Name is required." });
+        const { error } = await supabase
+            .from("categories").update({ name: name.trim() }).eq("id", id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Admin: Delete category ────────────────────────────────────
+app.delete("/admin/categories/:id", isAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { data: cat } = await supabase
+            .from("categories").select("slug, name").eq("id", id).single();
+        if (!cat) return res.status(404).json({ error: "Category not found." });
+        if (cat.slug === "all") return res.status(400).json({ error: "Cannot delete 'All Products'." });
+        await supabase.from("products").update({ category: "all" }).eq("category", cat.slug);
+        const { error } = await supabase.from("categories").delete().eq("id", id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Apply discount code (cart + checkout) ────────────────────
+app.post("/apply-discount", async (req, res) => {
+    try {
+        const { code, orderTotal } = req.body;
+        const { data: settings } = await supabase.from("settings").select("key, value");
+        const map = {};
+        (settings || []).forEach(s => { map[s.key] = s.value; });
+
+        const savedCode    = map["discount_code"] || "";
+        const discountType = map["discount_type"] || "none";
+        const discountValue = parseFloat(map["discount_value"] || 0);
+        const minOrder     = parseFloat(map["discount_min_order"] || 0);
+        const expiry       = map["discount_expiry"] || "";
+
+        if (!savedCode || discountType === "none") {
+            return res.status(400).json({ error: "No active discount available." });
+        }
+        if (code.trim().toUpperCase() !== savedCode) {
+            return res.status(400).json({ error: "Invalid discount code." });
+        }
+        if (expiry && new Date(expiry) < new Date()) {
+            return res.status(400).json({ error: "This discount code has expired." });
+        }
+        if (minOrder > 0 && orderTotal < minOrder) {
+            return res.status(400).json({ error: `Minimum order of Rs. ${minOrder} required for this code.` });
+        }
+
+        let discountAmount = 0;
+        if (discountType === "percentage") {
+            discountAmount = Math.round((orderTotal * discountValue) / 100);
+        } else if (discountType === "flat") {
+            discountAmount = discountValue;
+        }
+        discountAmount = Math.min(discountAmount, orderTotal);
+
+        res.json({ success: true, discountAmount, discountType, discountValue });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── Cart ──────────────────────────────────────────────────────
 app.get("/cart", async (req, res) => {
   if (!req.session.user) return res.redirect("/login");
@@ -955,19 +1009,32 @@ app.get("/cart", async (req, res) => {
     .eq("user_id", req.session.user.id);
 
   const enrichedCart = await enrichCartItems(rawCart || []);
-  const total = enrichedCart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const subtotal = enrichedCart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const cartCount = enrichedCart.reduce((acc, item) => acc + item.quantity, 0);
 
-  // Fetch shipping setting
-  const { data: shippingSetting } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "shipping_cost")
-    .maybeSingle();
+  // Fetch ALL settings in one query
+  const { data: settingsRows } = await supabase.from("settings").select("key, value");
+  const settingsMap = {};
+  (settingsRows || []).forEach(s => { settingsMap[s.key] = s.value; });
 
-  const shippingCost = shippingSetting ? parseFloat(shippingSetting.value) : 0;
+  const baseShipping = parseFloat(settingsMap["shipping_cost"] || 0);
+  const freeAbove    = parseFloat(settingsMap["free_shipping_above"] || 0);
+  const minOrder     = parseFloat(settingsMap["minimum_order_value"] || 0);
+  const shippingCost = (freeAbove > 0 && subtotal >= freeAbove) ? 0 : baseShipping;
 
-  res.render("cart", { cartItems: enrichedCart, total, cartCount, shippingCost });
+  res.render("cart", {
+    cartItems: enrichedCart,
+    total: subtotal,
+    cartCount,
+    shippingCost,
+    freeAbove,
+    minOrder,
+    // Discount hint — lets user know the active promo code
+    discountCode:     settingsMap["discount_code"] || "",
+    discountType:     settingsMap["discount_type"] || "none",
+    discountValue:    parseFloat(settingsMap["discount_value"] || 0),
+    discountMinOrder: parseFloat(settingsMap["discount_min_order"] || 0),
+  });
 });
 
 app.post("/cart/add", async (req, res) => {
@@ -1085,16 +1152,51 @@ app.get("/checkout", async (req, res) => {
   const cartItems = await enrichCartItems(rawCart || []);
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
-  const { data: shippingSetting } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "shipping_cost")
-    .maybeSingle();
+  const { data: settingsRows } = await supabase.from("settings").select("key, value");
+  const settingsMap = {};
+  (settingsRows || []).forEach(s => { settingsMap[s.key] = s.value; });
 
-  const shippingCost = shippingSetting ? parseFloat(shippingSetting.value) : 0;
-  const total = subtotal + shippingCost;
+  const baseShipping = parseFloat(settingsMap["shipping_cost"] || 0);
+  const freeAbove    = parseFloat(settingsMap["free_shipping_above"] || 0);
+  const minOrder     = parseFloat(settingsMap["minimum_order_value"] || 0);
+  const shippingCost = (freeAbove > 0 && subtotal >= freeAbove) ? 0 : baseShipping;
 
-  res.render("checkout", { addresses: addresses || [], cartItems, subtotal, total, shippingCost });
+  // Validate pre-applied discount from cart URL params
+  const preAppliedCode = ((req.query.applied_code || "")).toUpperCase();
+  let preAppliedDiscount = 0;
+
+  if (preAppliedCode) {
+    const savedCode   = (settingsMap["discount_code"] || "").toUpperCase();
+    const discType    = settingsMap["discount_type"] || "none";
+    const discVal     = parseFloat(settingsMap["discount_value"] || 0);
+    const discMin     = parseFloat(settingsMap["discount_min_order"] || 0);
+    const discExp     = settingsMap["discount_expiry"] || "";
+
+    if (
+      preAppliedCode === savedCode &&
+      discType !== "none" &&
+      (!discExp || new Date(discExp) >= new Date()) &&
+      (discMin === 0 || subtotal >= discMin)
+    ) {
+      preAppliedDiscount = discType === "percentage"
+        ? Math.round((subtotal * discVal) / 100)
+        : Math.min(discVal, subtotal);
+    }
+  }
+
+  const finalTotal = Math.max(0, subtotal + shippingCost - preAppliedDiscount);
+
+  res.render("checkout", {
+    addresses: addresses || [],
+    cartItems,
+    subtotal,
+    total: finalTotal,
+    shippingCost,
+    minOrder,
+    settingsMap,
+    preAppliedCode,
+    preAppliedDiscount,
+  });
 });
 
 app.post("/checkout", async (req, res) => {
@@ -1106,43 +1208,67 @@ app.post("/checkout", async (req, res) => {
       .select("*")
       .eq("user_id", req.session.user.id);
 
-    if (!rawCart || rawCart.length === 0) {
-      return res.redirect("/cart");
-    }
+    if (!rawCart || rawCart.length === 0) return res.redirect("/cart");
 
     const cartItems = await enrichCartItems(rawCart);
 
-    // ── Stock validation — prevent overselling ────────────────
+    // ── Stock validation ──────────────────────────────────────
     const stockErrors = cartItems.filter((item) => item.stock < item.quantity);
     if (stockErrors.length > 0) {
-      const msgs = stockErrors
-        .map((item) =>
-          item.stock === 0
-            ? `"${item.product_name}" is out of stock`
-            : `"${item.product_name}" only has ${item.stock} left (you have ${item.quantity} in cart)`
-        )
-        .join(", ");
+      const msgs = stockErrors.map((item) =>
+        item.stock === 0
+          ? `"${item.product_name}" is out of stock`
+          : `"${item.product_name}" only has ${item.stock} left`
+      ).join(", ");
       return res.status(400).send(`Stock issue: ${msgs}. Please update your cart.`);
     }
 
-    const total = cartItems.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
+    // ── Load settings & recalculate totals server-side ────────
+    const { data: settingsRows } = await supabase.from("settings").select("key, value");
+    const settingsMap = {};
+    (settingsRows || []).forEach(s => { settingsMap[s.key] = s.value; });
+
+    const subtotal  = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const minOrder  = parseFloat(settingsMap["minimum_order_value"] || 0);
+    const baseShip  = parseFloat(settingsMap["shipping_cost"] || 0);
+    const freeAbove = parseFloat(settingsMap["free_shipping_above"] || 0);
+    const shipping  = (freeAbove > 0 && subtotal >= freeAbove) ? 0 : baseShip;
+
+    // Minimum order guard (server-side — cannot be bypassed)
+    if (minOrder > 0 && subtotal < minOrder) {
+      return res.status(400).send(`Minimum order value is Rs. ${minOrder}. Your cart total is Rs. ${subtotal}.`);
+    }
+
+    // ── Validate & apply discount ─────────────────────────────
+    let discountAmount = 0;
+    const clientDiscount = parseFloat(req.body.discount_amount || 0);
+    const discountType   = settingsMap["discount_type"] || "none";
+    const discountCode   = settingsMap["discount_code"] || "";
+    const discountValue  = parseFloat(settingsMap["discount_value"] || 0);
+    const discountMin    = parseFloat(settingsMap["discount_min_order"] || 0);
+    const discountExpiry = settingsMap["discount_expiry"] || "";
+
+    if (clientDiscount > 0 && discountCode && discountType !== "none") {
+      const notExpired = !discountExpiry || new Date(discountExpiry) >= new Date();
+      const meetsMin   = discountMin === 0 || subtotal >= discountMin;
+      if (notExpired && meetsMin) {
+        if (discountType === "percentage") {
+          discountAmount = Math.round((subtotal * discountValue) / 100);
+        } else if (discountType === "flat") {
+          discountAmount = discountValue;
+        }
+        discountAmount = Math.min(discountAmount, subtotal);
+      }
+    }
+
+    const total = Math.max(0, subtotal + shipping - discountAmount);
 
     const {
-      selected_address,
-      first_name,
-      last_name,
-      address_phone,
-      phone,
-      address,
-      city,
-      pin_code,
-      email,
+      selected_address, first_name, last_name,
+      address_phone, phone, address, city, pin_code, email,
     } = req.body;
 
-    // Resolve address
+    // ── Resolve address ───────────────────────────────────────
     let addressId;
     if (selected_address) {
       addressId = selected_address;
@@ -1151,38 +1277,29 @@ app.post("/checkout", async (req, res) => {
         .from("addresses")
         .insert([{
           user_id: req.session.user.id,
-          first_name,
-          last_name,
+          first_name, last_name,
           phone: address_phone || phone,
-          address,
-          city,
-          pin_code,
+          address, city, pin_code,
         }])
-        .select()
-        .single();
-
+        .select().single();
       if (addrError) throw addrError;
       addressId = newAddr.id;
     }
 
     const { data: addressData } = await supabase
-      .from("addresses")
-      .select("*")
-      .eq("id", addressId)
-      .single();
+      .from("addresses").select("*").eq("id", addressId).single();
 
+    // ── Create order ──────────────────────────────────────────
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert([{
         user_id: req.session.user.id,
         address_id: addressId,
-        email,
-        phone,
+        email, phone,
         status: "pending",
         total,
       }])
-      .select()
-      .single();
+      .select().single();
 
     if (orderError) throw orderError;
 
@@ -1197,95 +1314,62 @@ app.post("/checkout", async (req, res) => {
 
     await supabase.from("order_items").insert(orderItems);
 
-    // ── Decrement stock for each variant ordered ──────────────
-    // Uses a SECURITY DEFINER Postgres function to bypass RLS on UPDATE
-    // Run this SQL in Supabase SQL Editor first:
-    //   CREATE OR REPLACE FUNCTION update_variant_stock(p_variant_id bigint, p_new_stock integer)
-    //   RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-    //   BEGIN UPDATE product_variants SET stock = p_new_stock WHERE id = p_variant_id; END; $$;
-    //   GRANT EXECUTE ON FUNCTION update_variant_stock(bigint, integer) TO anon, authenticated;
+    // ── Decrement stock ───────────────────────────────────────
     await Promise.all(
       cartItems.map(async (item) => {
-        // Resolve variant id
         let variantId = item.variant_id;
         if (!variantId) {
           const { data: vLookup } = await supabase
-            .from("product_variants")
-            .select("id, stock")
+            .from("product_variants").select("id, stock")
             .eq("product_id", parseInt(item.product_id, 10))
-            .order("id", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (!vLookup) {
-            console.error(`No variant found for product_id ${item.product_id} — skipping`);
-            return;
-          }
+            .order("id", { ascending: true }).limit(1).maybeSingle();
+          if (!vLookup) return;
           variantId = vLookup.id;
         }
-
-        // Read current stock
-        const { data: vData, error: vErr } = await supabase
-          .from("product_variants")
-          .select("stock")
-          .eq("id", variantId)
-          .single();
-
-        if (vErr || !vData) {
-          console.error(`Stock read failed for variant ${variantId}:`, vErr?.message);
-          return;
-        }
-
+        const { data: vData } = await supabase
+          .from("product_variants").select("stock").eq("id", variantId).single();
+        if (!vData) return;
         const newStock = Math.max(0, vData.stock - item.quantity);
-        console.log(`Stock: variant ${variantId}: ${vData.stock} → ${newStock}`);
-
-        // Call SECURITY DEFINER function — bypasses RLS UPDATE restriction
-        const { error: fnErr } = await supabase.rpc("update_variant_stock", {
-          p_variant_id: variantId,
-          p_new_stock: newStock,
+        await supabase.rpc("update_variant_stock", {
+          p_variant_id: variantId, p_new_stock: newStock,
         });
-
-        if (fnErr) {
-          console.error(`update_variant_stock failed for variant ${variantId}:`, fnErr.message);
-        }
       })
     );
 
     await supabase.from("carts").delete().eq("user_id", req.session.user.id);
 
     // ── Email helpers ─────────────────────────────────────────
-    // FIX: use item.price * item.quantity for per-line total; show unit price too
-    const buildItemsTable = (showUnitPrice) =>
-      cartItems
-        .map(
-          (item) => `
-          <tr>
-            <td style="padding:10px;border-bottom:1px solid #f0f0f0;">
-              <img src="${item.product_image}" width="50"
-                style="border-radius:8px;vertical-align:middle;margin-right:10px;">
-              ${item.product_name}
-            </td>
-            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.weight}</td>
-            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.quantity}</td>
-            ${showUnitPrice ? `<td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;">Rs. ${item.price.toLocaleString("en-IN")}</td>` : ""}
-            <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:bold;">
-              Rs. ${(item.price * item.quantity).toLocaleString("en-IN")}
-            </td>
-          </tr>`
-        )
-        .join("");
+    const buildItemsTable = (showUnit) =>
+      cartItems.map((item) => `
+        <tr>
+          <td style="padding:10px;border-bottom:1px solid #f0f0f0;">
+            <img src="${item.product_image}" width="50" style="border-radius:8px;vertical-align:middle;margin-right:10px;">
+            ${item.product_name}
+          </td>
+          <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.weight}</td>
+          <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.quantity}</td>
+          ${showUnit ? `<td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;">Rs. ${item.price.toLocaleString("en-IN")}</td>` : ""}
+          <td style="padding:10px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:bold;">
+            Rs. ${(item.price * item.quantity).toLocaleString("en-IN")}
+          </td>
+        </tr>`).join("");
 
-    const tableHeader = (showUnitPrice) => `
+    const tableHeader = (showUnit) => `
       <thead>
         <tr style="background:#f4f4f5;">
           <th style="padding:10px;text-align:left;font-size:12px;text-transform:uppercase;">Product</th>
           <th style="padding:10px;text-align:center;font-size:12px;text-transform:uppercase;">Size</th>
           <th style="padding:10px;text-align:center;font-size:12px;text-transform:uppercase;">Qty</th>
-          ${showUnitPrice ? '<th style="padding:10px;text-align:right;font-size:12px;text-transform:uppercase;">Unit Price</th>' : ""}
+          ${showUnit ? '<th style="padding:10px;text-align:right;font-size:12px;text-transform:uppercase;">Unit Price</th>' : ""}
           <th style="padding:10px;text-align:right;font-size:12px;text-transform:uppercase;">Total</th>
         </tr>
       </thead>`;
 
-    // Admin email
+    const orderBreakdown = `
+      <p style="margin:4px 0;">Subtotal: Rs. ${subtotal.toLocaleString("en-IN")}</p>
+      ${discountAmount > 0 ? `<p style="margin:4px 0;color:#16a34a;">Discount: -Rs. ${discountAmount.toLocaleString("en-IN")}</p>` : ""}
+      <p style="margin:4px 0;">Shipping: ${shipping === 0 ? "FREE" : "Rs. " + shipping.toLocaleString("en-IN")}</p>`;
+
     await transporter.sendMail({
       from: `"GardenRich Orders" <${process.env.EMAIL_USER}>`,
       to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com",
@@ -1293,9 +1377,7 @@ app.post("/checkout", async (req, res) => {
       subject: `🛒 New Order #${order.id.toString().slice(0, 8)} — Rs. ${total.toLocaleString("en-IN")}`,
       html: `
         <div style="font-family:sans-serif;max-width:620px;margin:0 auto;">
-          <h2 style="background:#18181b;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">
-            New Order Received
-          </h2>
+          <h2 style="background:#18181b;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">New Order Received</h2>
           <div style="background:white;padding:20px;border:1px solid #f0f0f0;border-radius:0 0 12px 12px;">
             <p><strong>Customer:</strong> ${addressData.first_name} ${addressData.last_name}</p>
             <p><strong>Email:</strong> ${email}</p>
@@ -1303,59 +1385,52 @@ app.post("/checkout", async (req, res) => {
             <p><strong>Address:</strong> ${addressData.address}, ${addressData.city} — ${addressData.pin_code}</p>
             <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
             <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-              ${tableHeader(true)}
-              <tbody>${buildItemsTable(true)}</tbody>
+              ${tableHeader(true)}<tbody>${buildItemsTable(true)}</tbody>
             </table>
             <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
             <div style="text-align:right;">
-              <p style="font-size:20px;font-weight:900;color:#16a34a;">
-                Total: Rs. ${total.toLocaleString("en-IN")}
-              </p>
+              ${orderBreakdown}
+              <p style="font-size:20px;font-weight:900;color:#16a34a;margin-top:8px;">Total: Rs. ${total.toLocaleString("en-IN")}</p>
               <p style="color:#888;font-size:12px;">Payment: Cash On Delivery</p>
             </div>
           </div>
         </div>`,
     });
 
-    // Customer confirmation email
     await transporter.sendMail({
       from: `"GardenRich" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `✅ Order Confirmed — Rs. ${total.toLocaleString("en-IN")}`,
       html: `
         <div style="font-family:sans-serif;max-width:620px;margin:0 auto;">
-          <h2 style="background:#16a34a;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">
-            Order Confirmed! 🎉
-          </h2>
+          <h2 style="background:#16a34a;color:white;padding:20px;border-radius:12px 12px 0 0;margin:0;">Order Confirmed! 🎉</h2>
           <div style="background:white;padding:20px;border:1px solid #f0f0f0;border-radius:0 0 12px 12px;">
-            <p>Hi <strong>${addressData.first_name}</strong>, your order has been placed successfully!</p>
+            <p>Hi <strong>${addressData.first_name}</strong>, your order has been placed!</p>
             <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-              ${tableHeader(false)}
-              <tbody>${buildItemsTable(false)}</tbody>
+              ${tableHeader(false)}<tbody>${buildItemsTable(false)}</tbody>
             </table>
             <hr style="border:none;border-top:1px solid #f0f0f0;margin:16px 0;">
-            <p style="text-align:right;font-size:18px;font-weight:900;color:#16a34a;">
-              Total: Rs. ${total.toLocaleString("en-IN")}
-            </p>
+            <div style="text-align:right;">
+              ${orderBreakdown}
+              <p style="font-size:18px;font-weight:900;color:#16a34a;margin-top:8px;">Total: Rs. ${total.toLocaleString("en-IN")}</p>
+            </div>
             <p style="background:#f4f4f5;padding:12px;border-radius:8px;">
               <strong>Delivering to:</strong><br>
               ${addressData.address}, ${addressData.city} — ${addressData.pin_code}<br>
               ${addressData.phone}
             </p>
-            <p style="color:#888;font-size:12px;text-align:center;margin-top:16px;">
-              Payment: Cash On Delivery
-            </p>
+            <p style="color:#888;font-size:12px;text-align:center;margin-top:16px;">Payment: Cash On Delivery</p>
           </div>
         </div>`,
     });
 
-    // FIX: use order.id (not orderId which was never declared)
     res.redirect(`/order-success?orderId=${order.id}`);
   } catch (err) {
     console.error("Checkout error:", err.message);
     res.status(500).send("Checkout failed: " + err.message);
   }
 });
+
 
 // ── Order success ─────────────────────────────────────────────
 // FIX: was reading req.query.id but redirect sends orderId
@@ -1442,6 +1517,11 @@ app.get("/my-orders/:id", async (req, res) => {
 app.get("/privacy", (req, res) => res.render("privacy"));
 app.get("/returns", (req, res) => res.render("refund"));
 app.get("/terms", (req, res) => res.render("terms"));
-app.get("/delivery", (req, res) => res.render("delivery"));
+app.get("/delivery", async (req, res) => {
+    const { data: settingsRows } = await supabase.from("settings").select("key, value");
+    const settings = {};
+    (settingsRows || []).forEach(s => { settings[s.key] = s.value; });
+    res.render("delivery", { settings });
+});
 
 app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));
