@@ -97,6 +97,7 @@
                 <% cartItems.forEach(item => { %>
                 <div class="cart-item flex items-center gap-4 p-4 bg-white rounded-2xl shadow-sm border border-zinc-100 hover:shadow-md transition-all"
                     data-id="<%= item.product_id %>"
+                    data-variant-id="<%= item.variant_id %>"
                     data-price="<%= item.price %>"
                     data-stock="<%= item.stock || 99 %>">
 
@@ -153,12 +154,12 @@
                     <!-- Item Breakdown -->
                     <div class="space-y-2 mb-4" id="summaryItemsList">
                         <% cartItems.forEach(item => { %>
-                        <div class="flex justify-between text-sm" id="summary-row-<%= item.product_id %>">
+                        <div class="flex justify-between text-sm" id="summary-row-<%= item.variant_id %>">
                             <span class="text-zinc-500 font-medium truncate mr-2">
-                                <%= item.product_name %>
+                                <%= item.product_name %> <span class="text-zinc-400 text-xs">(<%= item.weight %>)</span>
                                 <span class="summary-item-qty text-zinc-400 font-bold">×<%= item.quantity %></span>
                             </span>
-                            <span class="summary-item-total font-bold text-zinc-700 shrink-0" data-id="<%= item.product_id %>">
+                            <span class="summary-item-total font-bold text-zinc-700 shrink-0" data-id="<%= item.variant_id %>">
                                 Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %>
                             </span>
                         </div>

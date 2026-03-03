@@ -6,6 +6,7 @@ function showCounter(btn) {
 
   const parent = btn.closest(".product");
   const productId = parent.getAttribute("data-id");
+  const variantId = parent.getAttribute("data-variant-id");
   const counter = parent.querySelector(".counter-control");
   const qtySpan = parent.querySelector(".qty-text");
   const stock = parseInt(parent.getAttribute("data-stock") || "99");
@@ -20,7 +21,7 @@ function showCounter(btn) {
   fetch("/cart/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ productId }),
+    body: JSON.stringify({ productId, variantId }),
   })
     .then(async (res) => {
       const data = await res.json();
@@ -50,6 +51,7 @@ function showCounter(btn) {
 function updateQty(btn, change) {
   const parent = btn.closest(".product");
   const productId = parent.getAttribute("data-id");
+  const variantId = parent.getAttribute("data-variant-id");
   const qtySpan = parent.querySelector(".qty-text");
   const stock = parseInt(parent.getAttribute("data-stock") || "99");
   let currentQty = parseInt(qtySpan.innerText);
@@ -70,7 +72,7 @@ function updateQty(btn, change) {
     qtySpan.innerText = currentQty;
   }
 
-  updateCartOnServer(productId, currentQty);
+  updateCartOnServer(productId, variantId, currentQty);
 }
 
 function showStockPopup(stock) {
@@ -105,10 +107,11 @@ function updateCartQty(btn, change) {
   const itemContainer = btn.closest(".cart-item");
   if (!itemContainer) return;
 
-  const productId = itemContainer.getAttribute("data-id");
-  const qtySpan = itemContainer.querySelector(".qty-text");
-  const price = parseFloat(itemContainer.getAttribute("data-price"));
-  const stock = parseInt(itemContainer.getAttribute("data-stock") || "99");
+  const productId  = itemContainer.getAttribute("data-id");
+  const variantId  = itemContainer.getAttribute("data-variant-id");
+  const qtySpan    = itemContainer.querySelector(".qty-text");
+  const price      = parseFloat(itemContainer.getAttribute("data-price"));
+  const stock      = parseInt(itemContainer.getAttribute("data-stock") || "99");
 
   let currentQty = parseInt(qtySpan.innerText);
 
@@ -125,7 +128,8 @@ function updateCartQty(btn, change) {
     itemContainer.style.transform = "scale(0.95)";
     itemContainer.style.transition = "all 0.2s ease";
     setTimeout(() => {
-      const summaryRow = document.getElementById(`summary-row-${productId}`);
+      // Use variantId for summary row (each variant has its own row)
+      const summaryRow = document.getElementById(`summary-row-${variantId}`);
       if (summaryRow) {
         summaryRow.style.opacity = "0";
         summaryRow.style.transition = "opacity 0.2s ease";
@@ -142,25 +146,25 @@ function updateCartQty(btn, change) {
     if (subtotalEl)
       subtotalEl.textContent = "Rs. " + (price * currentQty).toLocaleString("en-IN");
 
-    const summaryQty = document.querySelector(`#summary-row-${productId} .summary-item-qty`);
+    const summaryQty = document.querySelector(`#summary-row-${variantId} .summary-item-qty`);
     if (summaryQty) summaryQty.textContent = "×" + currentQty;
 
-    const summaryLine = document.querySelector(`.summary-item-total[data-id="${productId}"]`);
+    const summaryLine = document.querySelector(`.summary-item-total[data-id="${variantId}"]`);
     if (summaryLine)
       summaryLine.textContent = "Rs. " + (price * currentQty).toLocaleString("en-IN");
 
     updateOrderSummary();
   }
 
-  updateCartOnServer(productId, currentQty);
+  updateCartOnServer(productId, variantId, currentQty);
 }
 
-async function updateCartOnServer(productId, quantity) {
+async function updateCartOnServer(productId, variantId, quantity) {
   try {
     const response = await fetch("/cart/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId, quantity }),
+      body: JSON.stringify({ productId, variantId, quantity }),
     });
     const data = await response.json();
     updateBadge(data.totalItems);
@@ -586,15 +590,18 @@ function onVariantChange(select) {
   const card = select.closest(".product");
   const selected = select.options[select.selectedIndex];
 
-  const price = selected.getAttribute("data-price");
-  const mrp = selected.getAttribute("data-mrp");
-  const stock = parseInt(selected.getAttribute("data-stock") || "0");
+  const variantId = selected.value;
+  const price     = selected.getAttribute("data-price");
+  const mrp       = selected.getAttribute("data-mrp");
+  const stock     = parseInt(selected.getAttribute("data-stock") || "0");
 
-  card.querySelector(".variant-price").textContent = `Rs. ${price}`;
+  // Update card data attributes to reflect selected variant
+  card.setAttribute("data-variant-id", variantId);
   card.setAttribute("data-price", price);
   card.setAttribute("data-stock", stock);
+  card.querySelector(".variant-price").textContent = `Rs. ${price}`;
 
-  const mrpEl = card.querySelector(".variant-mrp");
+  const mrpEl     = card.querySelector(".variant-mrp");
   const discountEl = card.querySelector(".variant-discount");
 
   if (mrp && parseFloat(mrp) > parseFloat(price)) {
@@ -609,23 +616,32 @@ function onVariantChange(select) {
     if (discountEl) discountEl.classList.add("hidden");
   }
 
-  const addBtn = card.querySelector(".add-btn");
-  const counter = card.querySelector(".counter-control");
-  const qtySpan = card.querySelector(".qty-text");
+  const addBtn      = card.querySelector(".add-btn");
+  const counter     = card.querySelector(".counter-control");
+  const qtySpan     = card.querySelector(".qty-text");
   const outOfStockBtn = card.querySelector(".out-of-stock-btn");
 
   if (stock === 0) {
+    // Variant is OOS
     if (outOfStockBtn) outOfStockBtn.classList.remove("hidden");
     if (addBtn) addBtn.classList.add("hidden");
     if (counter) { counter.classList.add("hidden"); counter.classList.remove("flex"); }
   } else {
     if (outOfStockBtn) outOfStockBtn.classList.add("hidden");
-    if (counter && !counter.classList.contains("hidden")) {
-      counter.classList.add("hidden"); counter.classList.remove("flex");
+
+    // Check if this variant is already in cart (from CART_MAP exposed by server)
+    const cartQty = (typeof CART_MAP !== "undefined" && CART_MAP[variantId]) ? CART_MAP[variantId] : 0;
+
+    if (cartQty > 0) {
+      // Show counter with existing cart quantity
+      if (addBtn) addBtn.classList.add("hidden");
+      if (counter) { counter.classList.remove("hidden"); counter.classList.add("flex"); }
+      if (qtySpan) qtySpan.innerText = cartQty;
+    } else {
+      // Show ADD button
+      if (counter) { counter.classList.add("hidden"); counter.classList.remove("flex"); }
       if (addBtn) addBtn.classList.remove("hidden");
       if (qtySpan) qtySpan.innerText = "1";
-    } else {
-      if (addBtn) addBtn.classList.remove("hidden");
     }
   }
 }

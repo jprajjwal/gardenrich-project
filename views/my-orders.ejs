@@ -28,71 +28,99 @@
             <% orders.forEach((order, index) => { %>
             <a href="/my-orders/<%= order.id %>"
                 class="order-item block bg-white rounded-2xl border border-zinc-100 shadow-sm hover:shadow-md transition-all p-5 <%= index >= 5 ? 'hidden' : '' %>">
-                <div class="flex items-center gap-4">
+
+                <div class="flex items-start gap-4">
 
                     <!-- Product Images -->
-                    <div class="flex -space-x-2 shrink-0">
-                        <% order.order_items.slice(0, 4).forEach((item, i) => { %>
-                        <div class="w-14 h-14 rounded-xl overflow-hidden border-2 border-white bg-zinc-100 shrink-0"
+                    <div class="flex -space-x-2 shrink-0 mt-0.5">
+                        <% order.order_items.slice(0, 3).forEach((item, i) => { %>
+                        <div class="w-12 h-12 rounded-xl overflow-hidden border-2 border-white bg-zinc-100 shrink-0"
                             style="z-index: <%= 10 - i %>">
+                            <% if (item.product_image) { %>
                             <img src="<%= item.product_image %>" class="w-full h-full object-cover">
+                            <% } else { %>
+                            <div class="w-full h-full flex items-center justify-center bg-zinc-100">
+                                <svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                                </svg>
+                            </div>
+                            <% } %>
                         </div>
                         <% }) %>
-                        <% if (order.order_items.length > 4) { %>
-                        <div class="w-14 h-14 rounded-xl border-2 border-white bg-zinc-100 flex items-center justify-center text-xs font-black text-zinc-500">
-                            +<%= order.order_items.length - 4 %>
+                        <% if (order.order_items.length > 3) { %>
+                        <div class="w-12 h-12 rounded-xl border-2 border-white bg-zinc-100 flex items-center justify-center text-xs font-black text-zinc-500"
+                            style="z-index: 1">
+                            +<%= order.order_items.length - 3 %>
                         </div>
                         <% } %>
                     </div>
 
                     <!-- Order Info -->
                     <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
+
+                        <!-- Status badge -->
+                        <div class="flex items-center gap-2 mb-1.5">
                             <% if (order.status === 'delivered') { %>
                             <span class="flex items-center gap-1 text-xs font-black text-green-600">
                                 <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                                 </svg>
-                                Order delivered
+                                Delivered
                             </span>
                             <% } else if (order.status === 'cancelled') { %>
                             <span class="flex items-center gap-1 text-xs font-black text-red-500">
                                 <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
                                 </svg>
-                                Order cancelled
+                                Cancelled
                             </span>
                             <% } else if (order.status === 'shipped') { %>
                             <span class="flex items-center gap-1 text-xs font-black text-purple-600">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"/>
                                 </svg>
-                                Out for delivery
+                                Out for Delivery
                             </span>
                             <% } else if (order.status === 'confirmed') { %>
                             <span class="flex items-center gap-1 text-xs font-black text-blue-600">
                                 <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                                 </svg>
-                                Order confirmed
+                                Confirmed
                             </span>
                             <% } else { %>
                             <span class="flex items-center gap-1 text-xs font-black text-yellow-600">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                 </svg>
-                                Order pending
+                                Pending
                             </span>
                             <% } %>
+
+                            <span class="text-zinc-200 text-xs">•</span>
+                            <span class="text-xs text-zinc-400 font-medium">
+                                <%= new Date(order.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) %> IST
+                            </span>
                         </div>
-                        <p class="text-xs text-zinc-400 font-medium truncate">
-                            Placed on <%= new Date(order.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) %>
-                        </p>
+
+                        <!-- Item names -->
+                        <div class="space-y-0.5 mb-2">
+                            <% order.order_items.slice(0, 3).forEach(item => { %>
+                            <p class="text-sm font-bold text-zinc-800 truncate">
+                                <%= item.product_name %>
+                                <span class="text-zinc-400 font-medium text-xs">×<%= item.quantity %></span>
+                            </p>
+                            <% }) %>
+                            <% if (order.order_items.length > 3) { %>
+                            <p class="text-xs text-zinc-400 font-medium">+<%= order.order_items.length - 3 %> more item<%= order.order_items.length - 3 > 1 ? 's' : '' %></p>
+                            <% } %>
+                        </div>
+
                     </div>
 
                     <!-- Total & Arrow -->
-                    <div class="flex items-center gap-2 shrink-0">
-                        <span class="font-black text-zinc-900">Rs. <%= order.total %></span>
+                    <div class="flex items-center gap-2 shrink-0 mt-1">
+                        <span class="font-black text-zinc-900">Rs. <%= order.total.toLocaleString('en-IN') %></span>
                         <svg class="w-4 h-4 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>

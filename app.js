@@ -25,7 +25,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "gardenrich-secret-key",
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false },
+    cookie: { secure: false }, // session cookie — expires when browser closes
   })
 );
 
@@ -79,15 +79,15 @@ async function enrichCartItems(rawCart) {
     )
   );
 
+  // Fetch each variant directly by its specific id (variant-aware cart)
+  const variantIds = [...new Set(rawCart.map((r) => parseInt(r.variant_id, 10)))].filter(Boolean);
   const variantResults = await Promise.all(
-    productIds.map((pid) =>
+    variantIds.map((vid) =>
       supabase
         .from("product_variants")
         .select("id, product_id, price, weight, mrp, stock")
-        .eq("product_id", pid)
-        .order("id", { ascending: true })
-        .limit(1)
-        .maybeSingle()   // won't error if no variant found
+        .eq("id", vid)
+        .maybeSingle()
     )
   );
 
@@ -106,13 +106,14 @@ async function enrichCartItems(rawCart) {
 
   const variantMap = {};
   variantResults.forEach(({ data }) => {
-    if (data) variantMap[parseInt(data.product_id, 10)] = data;
+    if (data) variantMap[parseInt(data.id, 10)] = data;
   });
 
   return rawCart.map((item) => {
     const pid = parseInt(item.product_id, 10);
+    const vid = parseInt(item.variant_id, 10);
     const product = productMap[pid] || {};
-    const variant = variantMap[pid] || {};
+    const variant = variantMap[vid] || {};
     return {
       ...item,
       variant_id: variant.id || null,
@@ -153,12 +154,13 @@ app.get("/", async (req, res) => {
     if (req.session.user) {
       const { data: cartItems } = await supabase
         .from("carts")
-        .select("product_id, quantity")
+        .select("product_id, variant_id, quantity")
         .eq("user_id", req.session.user.id);
 
       if (cartItems) {
         cartItems.forEach((item) => {
-          cartMap[item.product_id] = item.quantity;
+          // Key by variant_id so each variant tracks separately on the home page
+          if (item.variant_id) cartMap[item.variant_id] = item.quantity;
         });
       }
     }
@@ -740,10 +742,26 @@ app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
 });
 
 app.get("/admin/orders", isAdmin, async (req, res) => {
-  const { data: orders } = await supabase
+  const { data: orders, error: ordersError } = await supabase
     .from("orders")
-    .select("*, addresses(*), order_items(*)")
+    .select("*, addresses(*)")
     .order("created_at", { ascending: false });
+
+  if (ordersError) console.error("Orders fetch error:", ordersError.message);
+
+  // Fetch order_items separately to avoid RLS blocking the nested select
+  const enrichedOrders = await Promise.all(
+    (orders || []).map(async (order) => {
+      const { data: items, error: itemsErr } = await supabase
+        .from("order_items")
+        .select("*")
+        .eq("order_id", order.id);
+      if (itemsErr) console.error("Items fetch error for order", order.id, ":", itemsErr.message);
+      return { ...order, order_items: items || [] };
+    })
+  );
+
+  const ordersWithItems = enrichedOrders;
 
   const today = new Date().toISOString().split("T")[0];
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -764,7 +782,7 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
   });
 
   res.render("admin-orders", {
-    orders: orders || [],
+    orders: ordersWithItems,
     todayOrders,
     thisMonthOrders,
     thisMonthRevenue,
@@ -1040,18 +1058,21 @@ app.get("/cart", async (req, res) => {
 app.post("/cart/add", async (req, res) => {
   if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-  const { productId } = req.body;
+  const { productId, variantId } = req.body;
 
-  const { data: variants } = await supabase
+  if (!variantId) return res.status(400).json({ error: "Variant not specified" });
+
+  // Fetch this specific variant's stock
+  const { data: variant } = await supabase
     .from("product_variants")
-    .select("stock, price")
-    .eq("product_id", productId)
-    .order("id", { ascending: true })
-    .limit(1);
+    .select("id, stock, price")
+    .eq("id", variantId)
+    .single();
 
-  const stock = variants?.[0]?.stock !== undefined ? variants[0].stock : 99;
+  if (!variant) return res.status(400).json({ error: "Variant not found" });
 
-  // Reject if out of stock
+  const stock = variant.stock !== undefined ? variant.stock : 99;
+
   if (stock === 0) {
     return res.status(400).json({ error: "Out of stock", stock: 0 });
   }
@@ -1060,79 +1081,73 @@ app.post("/cart/add", async (req, res) => {
     .from("carts")
     .select("*")
     .eq("user_id", req.session.user.id)
-    .eq("product_id", productId)
-    .single();
+    .eq("variant_id", variantId)
+    .maybeSingle();
 
   if (existing) {
     const newQty = Math.min(existing.quantity + 1, stock);
-    await supabase
-      .from("carts")
-      .update({ quantity: newQty })
-      .eq("id", existing.id);
+    await supabase.from("carts").update({ quantity: newQty }).eq("id", existing.id);
   } else {
-    await supabase
-      .from("carts")
-      .insert([{ user_id: req.session.user.id, product_id: productId, quantity: 1 }]);
+    await supabase.from("carts").insert([{
+      user_id: req.session.user.id,
+      product_id: productId,
+      variant_id: parseInt(variantId, 10),
+      quantity: 1,
+    }]);
   }
 
   const { data: allItems } = await supabase
-    .from("carts")
-    .select("quantity")
-    .eq("user_id", req.session.user.id);
+    .from("carts").select("quantity").eq("user_id", req.session.user.id);
 
   const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
   res.json({ success: true, totalItems, stock });
 });
 
+
 app.post("/cart/update", async (req, res) => {
   if (!req.session.user) return res.status(401).json({ error: "Not logged in" });
 
-  const { productId, quantity } = req.body;
+  const { productId, variantId, quantity } = req.body;
+
+  if (!variantId) return res.status(400).json({ error: "Variant not specified" });
 
   if (quantity <= 0) {
     await supabase
-      .from("carts")
-      .delete()
+      .from("carts").delete()
       .eq("user_id", req.session.user.id)
-      .eq("product_id", productId);
+      .eq("variant_id", variantId);
   } else {
-    const { data: variants } = await supabase
-      .from("product_variants")
-      .select("stock")
-      .eq("product_id", productId)
-      .order("id", { ascending: true })
-      .limit(1);
+    const { data: variant } = await supabase
+      .from("product_variants").select("stock").eq("id", variantId).single();
 
-    const stock = variants?.[0]?.stock !== undefined ? variants[0].stock : 99;
+    const stock = variant?.stock !== undefined ? variant.stock : 99;
     const safeQty = Math.min(quantity, stock);
 
     const { data: existing } = await supabase
-      .from("carts")
-      .select("id")
+      .from("carts").select("id")
       .eq("user_id", req.session.user.id)
-      .eq("product_id", productId)
-      .single();
+      .eq("variant_id", variantId)
+      .maybeSingle();
 
     if (existing) {
-      await supabase
-        .from("carts")
-        .update({ quantity: safeQty })
-        .eq("id", existing.id);
+      await supabase.from("carts").update({ quantity: safeQty }).eq("id", existing.id);
     } else {
-      await supabase.from("carts").insert([
-        { user_id: req.session.user.id, product_id: productId, quantity: safeQty },
-      ]);
+      await supabase.from("carts").insert([{
+        user_id: req.session.user.id,
+        product_id: productId,
+        variant_id: parseInt(variantId, 10),
+        quantity: safeQty,
+      }]);
     }
   }
 
   const { data: allItems } = await supabase
-    .from("carts")
-    .select("quantity")
-    .eq("user_id", req.session.user.id);
+    .from("carts").select("quantity").eq("user_id", req.session.user.id);
 
   const totalItems = allItems?.reduce((acc, i) => acc + i.quantity, 0) || 0;
   res.json({ success: true, totalItems });
 });
+
 
 // ── Checkout ──────────────────────────────────────────────────
 app.get("/checkout", async (req, res) => {
@@ -1305,14 +1320,17 @@ app.post("/checkout", async (req, res) => {
 
     const orderItems = cartItems.map((item) => ({
       order_id: order.id,
-      product_id: item.product_id,
       product_name: item.product_name,
       product_image: item.product_image,
       quantity: item.quantity,
       price: item.price,
     }));
 
-    await supabase.from("order_items").insert(orderItems);
+    const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
+    if (itemsError) {
+      console.error("order_items insert failed:", itemsError.message);
+      throw new Error("Failed to save order items: " + itemsError.message);
+    }
 
     // ── Decrement stock ───────────────────────────────────────
     await Promise.all(
