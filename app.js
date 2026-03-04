@@ -688,39 +688,65 @@ app.post("/admin/edit-product/:id", isAdmin, upload.single("imageFile"), async (
 
     if (error) throw error;
 
-    // ── Update variant stock if provided ──────────────────────
-    // Body may contain variantId[] and variantStock[] arrays
-    const rawVariantIds = req.body["variantId[]"] || req.body.variantId;
-    const rawVariantStocks = req.body["variantStock[]"] || req.body.variantStock;
+    // ── Update existing variants (price, mrp, stock) ─────────
+    // JS sends variantUpdates as JSON string in FormData
+    const rawVariantUpdates = req.body.variantUpdates;
+    if (rawVariantUpdates) {
+      let variantUpdates = [];
+      try { variantUpdates = JSON.parse(rawVariantUpdates); } catch(e) {}
 
-    if (rawVariantIds && rawVariantStocks) {
-      const variantIds = Array.isArray(rawVariantIds) ? rawVariantIds : [rawVariantIds];
-      const variantStocks = Array.isArray(rawVariantStocks) ? rawVariantStocks : [rawVariantStocks];
+      await Promise.all(variantUpdates.map(async (v) => {
+        const vid = parseInt(v.id, 10);
+        if (!vid) return;
+        const updateFields = {
+          stock: parseInt(v.stock, 10) || 0,
+          price: parseFloat(v.price) || 0,
+        };
+        if (v.mrp !== null && v.mrp !== "" && v.mrp !== undefined) {
+          updateFields.mrp = parseFloat(v.mrp);
+        } else {
+          updateFields.mrp = null;
+        }
+        console.log(`Updating variant ${vid}:`, updateFields);
+        const { error: vErr } = await (supabaseAdmin || supabase)
+          .from("product_variants")
+          .update(updateFields)
+          .eq("id", vid);
+        if (vErr) console.error(`Variant ${vid} update failed:`, vErr.message);
+      }));
+    }
 
-      await Promise.all(
-        variantIds.map(async (vid, i) => {
-          const newStock = parseInt(variantStocks[i], 10);
-          if (isNaN(newStock) || newStock < 0) return;
-          const variantId = parseInt(vid, 10);
-          console.log(`Updating variant ${variantId} stock → ${newStock}`);
+    // ── Insert new variants ───────────────────────────────────
+    const rawNewVariants = req.body.newVariants;
+    if (rawNewVariants) {
+      let newVariants = [];
+      try { newVariants = JSON.parse(rawNewVariants); } catch(e) {}
+      if (newVariants.length > 0) {
+        const inserts = newVariants.map(v => ({
+          product_id: productId,
+          weight: v.weight,
+          price: parseFloat(v.price) || 0,
+          mrp: v.mrp ? parseFloat(v.mrp) : null,
+          stock: parseInt(v.stock) || 0,
+        }));
+        const { error: insErr } = await (supabaseAdmin || supabase)
+          .from("product_variants").insert(inserts);
+        if (insErr) console.error("New variants insert failed:", insErr.message);
+      }
+    }
 
-          // Try RPC first (SECURITY DEFINER bypasses RLS)
-          const { error: rpcErr } = await supabase.rpc("update_variant_stock", {
-            p_variant_id: variantId,
-            p_new_stock: newStock,
-          });
-
-          if (rpcErr) {
-            console.error(`RPC failed for variant ${variantId}: ${rpcErr.message} — trying direct update`);
-            // Fallback: direct update (works if RLS allows or service key is set)
-            const { error: directErr } = await supabase
-              .from("product_variants")
-              .update({ stock: newStock })
-              .eq("id", variantId);
-            if (directErr) console.error(`Direct update also failed: ${directErr.message}`);
-          }
-        })
-      );
+    // ── Delete removed variants ───────────────────────────────
+    const rawDeleteVariants = req.body.deleteVariants;
+    if (rawDeleteVariants) {
+      let deleteIds = [];
+      try { deleteIds = JSON.parse(rawDeleteVariants); } catch(e) {}
+      if (deleteIds.length > 0) {
+        const { error: delErr } = await (supabaseAdmin || supabase)
+          .from("product_variants")
+          .delete()
+          .in("id", deleteIds.map(id => parseInt(id, 10)));
+        if (delErr) console.error("Variant delete failed:", delErr.message);
+      }
     }
 
     res.json({ success: true });
@@ -776,18 +802,24 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
     })
   );
 
-  const today = new Date().toISOString().split("T")[0];
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  // Use IST date (UTC+5:30) — manually add 330 min offset (reliable across all Node envs)
+  const IST_OFFSET = 330 * 60 * 1000;
+  const nowIST = new Date(Date.now() + IST_OFFSET);
+  const today = nowIST.toISOString().slice(0, 10);
+  const thisMonth = today.slice(0, 7);
 
-  const todayOrders = orders.filter((o) => o.created_at.startsWith(today));
-  const thisMonthOrders = orders.filter((o) => o.created_at.startsWith(thisMonth)).length;
+  const toISTDate  = (utcStr) => new Date(new Date(utcStr).getTime() + IST_OFFSET).toISOString().slice(0, 10);
+  const toISTMonth = (utcStr) => toISTDate(utcStr).slice(0, 7);
+
+  const todayOrders = orders.filter((o) => toISTDate(o.created_at) === today);
+  const thisMonthOrders = orders.filter((o) => toISTMonth(o.created_at) === thisMonth).length;
   const thisMonthRevenue = orders
-    .filter((o) => o.created_at.startsWith(thisMonth))
+    .filter((o) => toISTMonth(o.created_at) === thisMonth)
     .reduce((acc, o) => acc + o.total, 0);
 
   const monthlyStats = {};
   orders.forEach((order) => {
-    const month = order.created_at.slice(0, 7);
+    const month = toISTMonth(order.created_at);
     if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
     monthlyStats[month].count += 1;
     monthlyStats[month].total += order.total;

@@ -387,9 +387,7 @@ async function openEditModal(productId) {
   document.getElementById("editCategory").value = card.getAttribute("data-category") || "";
 
   const preview = document.getElementById("editImagePreview");
-  const placeholder = document.getElementById("editImagePlaceholder");
   preview.classList.add("hidden");
-  placeholder.classList.remove("hidden");
 
   const imageInput = document.getElementById("editImage");
   const newInput = imageInput.cloneNode(true);
@@ -398,13 +396,13 @@ async function openEditModal(productId) {
     if (this.files[0]) {
       preview.src = URL.createObjectURL(this.files[0]);
       preview.classList.remove("hidden");
-      placeholder.classList.add("hidden");
     }
   });
 
-  document.getElementById("newVariantRows").innerHTML = "";
+  const newRows = document.getElementById("newVariantRows");
+  if (newRows) newRows.innerHTML = "";
 
-  const variantRowsEl = document.getElementById("editVariantRows");
+  const variantRowsEl = document.getElementById("editVariantStocks");
   variantRowsEl.innerHTML = `
     <div class="flex items-center justify-center py-4 gap-2 text-zinc-400">
       <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -500,10 +498,10 @@ function addNewVariantRow() {
   container.appendChild(row);
 }
 
-const variantsToDelete = [];
+var variantsToDelete = variantsToDelete || [];
 
 function removeExistingVariant(btn, variantId) {
-  const row = btn.closest(".existing-variant-row");
+  const row = btn.closest(".existing-variant-row") || btn.closest(".new-variant-row");
   row.style.opacity = "0";
   row.style.transition = "all 0.2s ease";
   setTimeout(() => { row.remove(); variantsToDelete.push(variantId); }, 200);
@@ -696,7 +694,7 @@ function filterOrders(status) {
 }
 
 // ── Discount code (cart page) ─────────────────────────────────
-let appliedDiscount = 0;
+var appliedDiscount = (typeof appliedDiscount !== 'undefined') ? appliedDiscount : 0;
 
 async function applyDiscount() {
   const code = document.getElementById("discountCodeInput").value.trim();
