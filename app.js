@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const session = require("express-session");
+const cookieSession = require("cookie-session");
 const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const path = require("path");
@@ -21,13 +21,26 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use(
-  session({
+  cookieSession({
+    name: "gardenrich_session",
     secret: process.env.SESSION_SECRET || "gardenrich-secret-key",
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false }, // session cookie — expires when browser closes
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — persists across Vercel instances
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
   })
 );
+
+// cookie-session doesn't have session.destroy() natively — polyfill it
+app.use((req, res, next) => {
+  if (!req.session.destroy) {
+    req.session.destroy = (cb) => {
+      req.session = null;
+      if (cb) cb();
+    };
+  }
+  next();
+});
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
@@ -742,17 +755,19 @@ app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
 });
 
 app.get("/admin/orders", isAdmin, async (req, res) => {
-  const { data: orders, error: ordersError } = await supabase
+  // Use supabaseAdmin (service key) to bypass RLS on orders table
+  const adminClient = supabaseAdmin || supabase;
+  const { data: rawOrders, error: ordersError } = await adminClient
     .from("orders")
     .select("*, addresses(*)")
     .order("created_at", { ascending: false });
 
   if (ordersError) console.error("Orders fetch error:", ordersError.message);
 
-  // Fetch order_items separately to avoid RLS blocking the nested select
-  const enrichedOrders = await Promise.all(
-    (orders || []).map(async (order) => {
-      const { data: items, error: itemsErr } = await supabase
+  // Fetch order_items separately for each order
+  const orders = await Promise.all(
+    (rawOrders || []).map(async (order) => {
+      const { data: items, error: itemsErr } = await adminClient
         .from("order_items")
         .select("*")
         .eq("order_id", order.id);
@@ -761,20 +776,17 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
     })
   );
 
-  const ordersWithItems = enrichedOrders;
-
   const today = new Date().toISOString().split("T")[0];
   const thisMonth = new Date().toISOString().slice(0, 7);
 
-  const todayOrders = orders?.filter((o) => o.created_at.startsWith(today)) || [];
-  const thisMonthOrders = orders?.filter((o) => o.created_at.startsWith(thisMonth)).length || 0;
-  const thisMonthRevenue =
-    orders
-      ?.filter((o) => o.created_at.startsWith(thisMonth))
-      .reduce((acc, o) => acc + o.total, 0) || 0;
+  const todayOrders = orders.filter((o) => o.created_at.startsWith(today));
+  const thisMonthOrders = orders.filter((o) => o.created_at.startsWith(thisMonth)).length;
+  const thisMonthRevenue = orders
+    .filter((o) => o.created_at.startsWith(thisMonth))
+    .reduce((acc, o) => acc + o.total, 0);
 
   const monthlyStats = {};
-  orders?.forEach((order) => {
+  orders.forEach((order) => {
     const month = order.created_at.slice(0, 7);
     if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
     monthlyStats[month].count += 1;
@@ -782,7 +794,7 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
   });
 
   res.render("admin-orders", {
-    orders: ordersWithItems,
+    orders: orders,
     todayOrders,
     thisMonthOrders,
     thisMonthRevenue,
@@ -1540,6 +1552,27 @@ app.get("/delivery", async (req, res) => {
     const settings = {};
     (settingsRows || []).forEach(s => { settings[s.key] = s.value; });
     res.render("delivery", { settings });
+});
+
+// ── Admin: Notifications (new orders since timestamp) ────────
+app.get("/admin/notifications", isAdmin, async (req, res) => {
+  try {
+    const since = req.query.since
+      ? new Date(req.query.since).toISOString()
+      : new Date(Date.now() - 60 * 1000).toISOString(); // fallback: last 60s
+
+    const adminClient = supabaseAdmin || supabase;
+    const { data: newOrders, error } = await adminClient
+      .from("orders")
+      .select("id, total, created_at, email, status")
+      .gt("created_at", since)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ orders: newOrders || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));

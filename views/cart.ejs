@@ -134,6 +134,16 @@
                         </p>
                     </div>
 
+                    <% if (item.stock === 0) { %>
+                    <!-- OOS: one-tap remove button -->
+                    <button onclick="removeOOSItem(this)"
+                        class="flex items-center gap-1.5 px-3 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 hover:text-red-600 rounded-xl text-xs font-black transition-all active:scale-95 shrink-0">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                        Remove
+                    </button>
+                    <% } else { %>
                     <div class="flex items-center bg-zinc-900 text-white rounded-xl overflow-hidden shrink-0 shadow-md">
                         <button onclick="updateCartQty(this, -1)"
                             class="px-3 py-2.5 hover:bg-zinc-700 text-sm font-bold transition-colors leading-none select-none">−</button>
@@ -141,6 +151,7 @@
                         <button onclick="updateCartQty(this, 1)"
                             class="px-3 py-2.5 hover:bg-zinc-700 text-sm font-bold transition-colors leading-none select-none">+</button>
                     </div>
+                    <% } %>
 
                 </div>
                 <% }) %>
@@ -244,17 +255,30 @@
                         </div>
                     </div>
 
+                    <%
+                        const _hasOOS = cartItems.some(item => item.stock === 0);
+                        const _checkoutBlocked = (_minOrder > 0 && _subtotal < _minOrder) || _hasOOS;
+                        const _checkoutLabel = _hasOOS
+                            ? 'Remove Out-of-Stock Items'
+                            : (_minOrder > 0 && _subtotal < _minOrder)
+                                ? 'Min. Order Rs. ' + _minOrder.toLocaleString('en-IN')
+                                : 'Proceed to Checkout';
+                    %>
+                    <% if (_hasOOS) { %>
+                    <div class="mt-4 mb-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                        <svg class="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                        <p class="text-xs font-bold text-red-600">Some items are out of stock. Remove them to proceed.</p>
+                    </div>
+                    <% } %>
                     <button id="checkoutBtn" onclick="proceedToCheckout()"
-                        class="w-full py-4 rounded-xl font-black mt-6 uppercase tracking-widest text-sm transition-all
-                            <%= (_minOrder > 0 && _subtotal < _minOrder)
+                        class="w-full py-4 rounded-xl font-black mt-2 uppercase tracking-widest text-sm transition-all
+                            <%= _checkoutBlocked
                                 ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed'
                                 : 'bg-green-700 hover:bg-green-800 text-white shadow-lg shadow-green-100 active:scale-95' %>"
-                        <%= (_minOrder > 0 && _subtotal < _minOrder) ? 'disabled' : '' %>>
-                        <% if (_minOrder > 0 && _subtotal < _minOrder) { %>
-                            Min. Order Rs. <%= _minOrder.toLocaleString('en-IN') %>
-                        <% } else { %>
-                            Proceed to Checkout
-                        <% } %>
+                        <%= _checkoutBlocked ? 'disabled' : '' %>>
+                        <%= _checkoutLabel %>
                     </button>
 
                     <!-- Trust Badges -->

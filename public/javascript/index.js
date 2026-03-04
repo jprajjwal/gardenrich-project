@@ -56,6 +56,11 @@ function updateQty(btn, change) {
   const stock = parseInt(parent.getAttribute("data-stock") || "99");
   let currentQty = parseInt(qtySpan.innerText);
 
+  if (change > 0 && stock === 0) {
+    showStockPopup(0);
+    return;
+  }
+
   if (change > 0 && currentQty >= stock) {
     showStockPopup(stock);
     return;
@@ -114,6 +119,11 @@ function updateCartQty(btn, change) {
   const stock      = parseInt(itemContainer.getAttribute("data-stock") || "99");
 
   let currentQty = parseInt(qtySpan.innerText);
+
+  if (change > 0 && stock === 0) {
+    showStockPopup(0);
+    return;
+  }
 
   if (change > 0 && currentQty >= stock) {
     showStockPopup(stock);
@@ -749,10 +759,185 @@ function removeDiscount() {
 function proceedToCheckout() {
   const btn = document.getElementById("checkoutBtn");
   if (btn && btn.disabled) return;
+
+  // Double-check: block if any cart item has stock=0
+  const hasOOS = [...document.querySelectorAll(".cart-item")]
+    .some(el => parseInt(el.getAttribute("data-stock") || "99") === 0);
+  if (hasOOS) {
+    showStockPopup(0);
+    return;
+  }
   if (appliedDiscount > 0) {
     const code = document.getElementById("discountCodeInput").value.trim();
     window.location.href = `/checkout?applied_code=${encodeURIComponent(code)}&discount=${appliedDiscount}`;
   } else {
     window.location.href = "/checkout";
   }
+}
+
+// ── Admin Notifications ───────────────────────────────────────
+// Polls /admin/notifications every 20s for new orders.
+// Stores unread orders in memory; "Clear All" wipes them.
+
+(function initAdminNotifications() {
+  const bell = document.getElementById("notifBtn");
+  if (!bell) return; // not admin, skip
+
+  let notifications = [];
+  // Poll starting from now so we only catch NEW orders going forward
+  let lastChecked = new Date().toISOString();
+
+  function timeAgo(dateStr) {
+    const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+    if (diff < 60) return "Just now";
+    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+    return Math.floor(diff / 86400) + "d ago";
+  }
+
+  function renderNotifications() {
+    const list   = document.getElementById("notifList");
+    const empty  = document.getElementById("notifEmpty");
+    const badge  = document.getElementById("notifBadge");
+
+    // Remove old items (keep empty placeholder)
+    list.querySelectorAll(".notif-item").forEach(el => el.remove());
+
+    if (notifications.length === 0) {
+      empty.classList.remove("hidden");
+      badge.classList.add("hidden");
+      return;
+    }
+
+    empty.classList.add("hidden");
+    badge.classList.remove("hidden");
+    badge.textContent = notifications.length > 99 ? "99+" : notifications.length;
+
+    // Insert items before the empty div
+    notifications.forEach(order => {
+      const item = document.createElement("a");
+      item.href = "/admin/orders";
+      item.className = "notif-item flex items-start gap-3 px-4 py-3 hover:bg-green-50 transition-colors cursor-pointer";
+      item.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0 mt-0.5">
+          <svg class="w-4 h-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-black text-zinc-900">New Order — Rs. ${order.total.toLocaleString("en-IN")}</p>
+          <p class="text-[10px] text-zinc-400 font-medium mt-0.5 truncate">${order.email}</p>
+          <p class="text-[10px] text-green-600 font-bold mt-0.5">${timeAgo(order.created_at)}</p>
+        </div>
+      `;
+      list.insertBefore(item, empty);
+    });
+  }
+
+  async function pollNotifications() {
+    try {
+      const res = await fetch(`/admin/notifications?since=${encodeURIComponent(lastChecked)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      lastChecked = new Date().toISOString();
+
+      if (data.orders && data.orders.length > 0) {
+        // Prepend new ones (avoid duplicates by id)
+        const existingIds = new Set(notifications.map(n => n.id));
+        const fresh = data.orders.filter(o => !existingIds.has(o.id));
+
+        if (fresh.length > 0) {
+          notifications = [...fresh, ...notifications];
+          renderNotifications();
+          // Animate bell
+          const bellIcon = document.getElementById("notifBell");
+          if (bellIcon) {
+            bellIcon.classList.add("animate-bounce");
+            setTimeout(() => bellIcon.classList.remove("animate-bounce"), 1500);
+          }
+          // Browser notification (if permission granted)
+          if (Notification.permission === "granted") {
+            new Notification("GardenRich", {
+              body: fresh.length === 1
+                ? `New order — Rs. ${fresh[0].total.toLocaleString("en-IN")}`
+                : `${fresh.length} new orders received`,
+              icon: "/favicon.ico",
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Silently ignore network errors during polling
+    }
+  }
+
+  // Request browser notification permission
+  if (Notification && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+
+  // Expose clear function globally so the button can call it
+  window._clearNotifications = function() {
+    notifications = [];
+    renderNotifications();
+    const panel = document.getElementById("notifPanel");
+    if (panel) panel.classList.add("hidden");
+  };
+
+  // Initial render + start polling every 20 seconds
+  renderNotifications();
+  pollNotifications(); // immediate first check
+  setInterval(pollNotifications, 20000);
+})();
+
+function toggleNotifPanel(event) {
+  if (event) event.stopPropagation();
+  const panel = document.getElementById("notifPanel");
+  if (panel) panel.classList.toggle("hidden");
+  // Close user menu if open
+  const userMenu = document.getElementById("userMenu");
+  if (userMenu) userMenu.classList.add("hidden");
+}
+
+function clearAllNotifications() {
+  // Access the notifications array from the closure via a global bridge
+  if (typeof _clearNotifications === "function") _clearNotifications();
+}
+
+// Close notification panel when clicking outside
+document.addEventListener("click", function(e) {
+  const wrapper = document.getElementById("notifWrapper");
+  if (wrapper && !wrapper.contains(e.target)) {
+    const panel = document.getElementById("notifPanel");
+    if (panel) panel.classList.add("hidden");
+  }
+});
+
+// ── Remove OOS item from cart (one tap) ──────────────────────
+function removeOOSItem(btn) {
+  const itemContainer = btn.closest(".cart-item");
+  if (!itemContainer) return;
+
+  const productId = itemContainer.getAttribute("data-id");
+  const variantId = itemContainer.getAttribute("data-variant-id");
+
+  itemContainer.style.opacity = "0";
+  itemContainer.style.transform = "scale(0.95)";
+  itemContainer.style.transition = "all 0.2s ease";
+
+  setTimeout(() => {
+    const summaryRow = document.getElementById(`summary-row-${variantId}`);
+    if (summaryRow) {
+      summaryRow.style.opacity = "0";
+      summaryRow.style.transition = "opacity 0.2s ease";
+      setTimeout(() => summaryRow.remove(), 200);
+    }
+    itemContainer.remove();
+    updateOrderSummary();
+    checkEmptyCart();
+  }, 200);
+
+  // Remove from server
+  updateCartOnServer(productId, variantId, 0);
 }
