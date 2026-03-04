@@ -24,8 +24,8 @@ app.use(
   cookieSession({
     name: "gardenrich_session",
     secret: process.env.SESSION_SECRET || "gardenrich-secret-key",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — persists across Vercel instances
-    secure: process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    secure: false,   // let Vercel/browser handle HTTPS; cookie works on both
     httpOnly: true,
     sameSite: "lax",
   })
@@ -56,6 +56,7 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_KEY
   : null;
 
 app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 
 app.use(async (req, res, next) => {
   res.locals.user = req.session.user || null;
@@ -1607,10 +1608,10 @@ app.get("/admin/notifications", isAdmin, async (req, res) => {
   }
 });
 
-// Local dev: listen on port 3000
-// Vercel: export the app as a serverless function
-if (process.env.VERCEL) {
-  module.exports = app;
-} else {
+// Export for Vercel serverless
+module.exports = app;
+
+// Also listen locally when not on Vercel
+if (!process.env.VERCEL) {
   app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));
 }
