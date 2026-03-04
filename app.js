@@ -1607,4 +1607,10 @@ app.get("/admin/notifications", isAdmin, async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));
+// Local dev: listen on port 3000
+// Vercel: export the app as a serverless function
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  app.listen(3000, () => console.log("GardenRich running on http://localhost:3000"));
+}
