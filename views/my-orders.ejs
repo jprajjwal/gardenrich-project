@@ -99,7 +99,7 @@
 
                             <span class="text-zinc-200 text-xs">•</span>
                             <span class="text-xs text-zinc-400 font-medium">
-                                <%= new Date(order.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) %> IST
+                                <%= toISTDisplay(order.created_at) %>
                             </span>
                         </div>
 

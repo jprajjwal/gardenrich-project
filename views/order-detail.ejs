@@ -22,9 +22,10 @@
             const statusSteps = ['pending', 'confirmed', 'shipped', 'delivered'];
             const currentStep = statusSteps.indexOf(order.status);
             const isCancelled = order.status === 'cancelled';
-            const dateObj = new Date(order.created_at);
-            const dateStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
-            const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            const _istDisplay = toISTDisplay(order.created_at);
+            const [_datePart, _timePart] = _istDisplay.split(', ');
+            const dateStr = _datePart;
+            const timeStr = _istDisplay.replace(_datePart + ', ', '');
         %>
 
         <!-- Status & Progress -->

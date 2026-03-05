@@ -58,6 +58,33 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_KEY
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
+// ── Global IST helpers (used across all routes & templates) ──
+const IST_OFFSET = 330 * 60 * 1000; // UTC+5:30 in ms
+
+// Always parse Supabase timestamp as UTC (appends Z if no TZ info)
+const parseUTC = (s) => {
+  if (!s) return new Date();
+  const str = String(s);
+  if (str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str)) return new Date(str);
+  return new Date(str + 'Z');
+};
+
+const toISTDate    = (u) => new Date(parseUTC(u).getTime() + IST_OFFSET).toISOString().slice(0, 10);
+const toISTMonth   = (u) => toISTDate(u).slice(0, 7);
+
+// Returns "06 Mar 2026, 9:28 am IST"
+const toISTDisplay = (u) => {
+  const d = new Date(parseUTC(u).getTime() + IST_OFFSET);
+  const dd   = String(d.getUTCDate()).padStart(2, '0');
+  const mo   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+  const yr   = d.getUTCFullYear();
+  let   h    = d.getUTCHours();
+  const m    = String(d.getUTCMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${dd} ${mo} ${yr}, ${h}:${m} ${ampm} IST`;
+};
+
 app.use(async (req, res, next) => {
   res.locals.user = req.session.user || null;
 
@@ -804,13 +831,9 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
   );
 
   // Use IST date (UTC+5:30) — manually add 330 min offset (reliable across all Node envs)
-  const IST_OFFSET = 330 * 60 * 1000;
   const nowIST = new Date(Date.now() + IST_OFFSET);
   const today = nowIST.toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
-
-  const toISTDate  = (utcStr) => new Date(new Date(utcStr).getTime() + IST_OFFSET).toISOString().slice(0, 10);
-  const toISTMonth = (utcStr) => toISTDate(utcStr).slice(0, 7);
 
   const todayOrders = orders.filter((o) => toISTDate(o.created_at) === today);
   const thisMonthOrders = orders.filter((o) => toISTMonth(o.created_at) === thisMonth).length;
@@ -832,6 +855,7 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
     thisMonthOrders,
     thisMonthRevenue,
     monthlyStats,
+    toISTDisplay,
   });
 });
 
@@ -1433,7 +1457,8 @@ app.post("/checkout", async (req, res) => {
       ${discountAmount > 0 ? `<p style="margin:4px 0;color:#16a34a;">Discount: -Rs. ${discountAmount.toLocaleString("en-IN")}</p>` : ""}
       <p style="margin:4px 0;">Shipping: ${shipping === 0 ? "FREE" : "Rs. " + shipping.toLocaleString("en-IN")}</p>`;
 
-    await transporter.sendMail({
+    // Non-blocking emails — failure won't cancel a successful order
+    transporter.sendMail({
       from: `"GardenRich Orders" <${process.env.EMAIL_USER}>`,
       to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com",
       cc: process.env.EMAIL_USER,
@@ -1458,9 +1483,9 @@ app.post("/checkout", async (req, res) => {
             </div>
           </div>
         </div>`,
-    });
+    }).catch(e => console.error("Admin email failed:", e.message));
 
-    await transporter.sendMail({
+    transporter.sendMail({
       from: `"GardenRich" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `✅ Order Confirmed — Rs. ${total.toLocaleString("en-IN")}`,
@@ -1485,7 +1510,7 @@ app.post("/checkout", async (req, res) => {
             <p style="color:#888;font-size:12px;text-align:center;margin-top:16px;">Payment: Cash On Delivery</p>
           </div>
         </div>`,
-    });
+    }).catch(e => console.error("Customer email failed:", e.message));
 
     res.redirect(`/order-success?orderId=${order.id}`);
   } catch (err) {
@@ -1558,7 +1583,7 @@ app.get("/my-orders", async (req, res) => {
     .eq("user_id", req.session.user.id)
     .order("created_at", { ascending: false });
 
-  res.render("my-orders", { orders: orders || [] });
+  res.render("my-orders", { orders: orders || [], toISTDisplay });
 });
 
 app.get("/my-orders/:id", async (req, res) => {
@@ -1573,7 +1598,7 @@ app.get("/my-orders/:id", async (req, res) => {
 
   if (!order) return res.status(404).send("Order not found.");
 
-  res.render("order-detail", { order });
+  res.render("order-detail", { order, toISTDisplay });
 });
 
 // ── Static pages ──────────────────────────────────────────────
@@ -1588,21 +1613,55 @@ app.get("/delivery", async (req, res) => {
 });
 
 // ── Admin: Notifications (new orders since timestamp) ────────
+// ── GET /admin/notifications — returns all orders since last clear ──
 app.get("/admin/notifications", isAdmin, async (req, res) => {
   try {
-    const since = req.query.since
-      ? new Date(req.query.since).toISOString()
-      : new Date(Date.now() - 60 * 1000).toISOString(); // fallback: last 60s
-
     const adminClient = supabaseAdmin || supabase;
-    const { data: newOrders, error } = await adminClient
+
+    // Fetch the global cleared_at timestamp from settings table
+    const { data: setting } = await adminClient
+      .from("settings")
+      .select("value")
+      .eq("key", "notif_cleared_at")
+      .single();
+
+    const clearedAt = setting?.value
+      ? new Date(setting.value).toISOString()
+      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // default: last 7 days
+
+    // Also support polling (only fetch new since client's last poll)
+    const since = req.query.since
+      ? new Date(Math.max(new Date(req.query.since), new Date(clearedAt))).toISOString()
+      : clearedAt;
+
+    const { data: orders, error } = await adminClient
       .from("orders")
       .select("id, total, created_at, email, status")
       .gt("created_at", since)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    res.json({ orders: newOrders || [] });
+
+    // Also return clearedAt so client knows full state
+    res.json({ orders: orders || [], clearedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /admin/notifications/clear — mark all as seen (cross-browser) ──
+app.post("/admin/notifications/clear", isAdmin, async (req, res) => {
+  try {
+    const adminClient = supabaseAdmin || supabase;
+    const now = new Date().toISOString();
+
+    // Upsert the cleared timestamp into settings
+    const { error } = await adminClient
+      .from("settings")
+      .upsert({ key: "notif_cleared_at", value: now }, { onConflict: "key" });
+
+    if (error) throw error;
+    res.json({ success: true, clearedAt: now });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

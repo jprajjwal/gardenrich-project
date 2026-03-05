@@ -158,8 +158,7 @@
                                 <%= order.status.charAt(0).toUpperCase() + order.status.slice(1) %>
                             </span>
                             <span class="text-xs text-zinc-400 font-bold">
-                                <% const _orderDate = new Date(new Date(order.created_at).getTime() + 330 * 60 * 1000); %>
-                                <%= _orderDate.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) %> IST
+                                <%= toISTDisplay(order.created_at) %>
                             </span>
                         </div>
                         <p class="font-black text-zinc-900 text-lg">

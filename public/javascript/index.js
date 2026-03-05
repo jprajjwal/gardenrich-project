@@ -778,77 +778,78 @@ function proceedToCheckout() {
 // Stores unread orders in memory; "Clear All" wipes them.
 
 (function initAdminNotifications() {
-  const bell = document.getElementById("notifBtn");
-  if (!bell) return; // not admin, skip
+  const bellBtn = document.getElementById("notifBtn");
+  if (!bellBtn) return; // not admin page, skip
 
-  // ── Persistent storage via localStorage ──────────────────
-  const STORAGE_KEY = "gr_admin_notifications";
+  let notifications = [];   // orders shown in panel (from server)
+  let lastPolled    = null; // ISO string — for incremental polling
 
-  function loadSaved() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-  }
-  function saveToDisk(notifs) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs.slice(0, 50))); } catch {}
-  }
-
-  let notifications = loadSaved();
-  let lastChecked = localStorage.getItem("gr_last_checked") || new Date().toISOString();
-
-  // ── Notification sound (Web Audio API — no file needed) ──
+  // ── Sound (Web Audio API, no file needed) ─────────────────
   function playNotifSound() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // Two-tone chime: high then slightly lower
       [880, 660].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
+        const osc  = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = "sine";
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.18);
-        gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + i * 0.18 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.35);
-        osc.start(ctx.currentTime + i * 0.18);
-        osc.stop(ctx.currentTime + i * 0.18 + 0.35);
+        const t = ctx.currentTime + i * 0.18;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.35, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.start(t);
+        osc.stop(t + 0.35);
       });
-    } catch (e) {}
+    } catch (_) {}
   }
 
+  // ── Helpers ───────────────────────────────────────────────
   function timeAgo(dateStr) {
-    const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
-    if (diff < 60) return "Just now";
-    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    // Force UTC parse — Supabase timestamps without Z are still UTC
+    const str = String(dateStr || '');
+    const utcDate = str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str)
+      ? new Date(str)
+      : new Date(str + 'Z');
+    const diff = Math.floor((Date.now() - utcDate.getTime()) / 1000);
+    if (diff < 5)     return "Just now";
+    if (diff < 60)    return diff + "s ago";
+    if (diff < 3600)  return Math.floor(diff / 60)  + "m ago";
     if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
     return Math.floor(diff / 86400) + "d ago";
   }
 
-  function renderNotifications() {
+  // ── Render panel ─────────────────────────────────────────
+  function renderPanel() {
     const list   = document.getElementById("notifList");
     const empty  = document.getElementById("notifEmpty");
     const badge  = document.getElementById("notifBadge");
+    const footer = document.getElementById("notifFooterCount");
+    if (!list) return;
 
+    // Remove previous items
     list.querySelectorAll(".notif-item").forEach(el => el.remove());
 
-    const footer = document.getElementById("notifFooterCount");
-
     if (notifications.length === 0) {
-      empty.classList.remove("hidden");
-      badge.classList.add("hidden");
+      if (empty)  empty.classList.remove("hidden");
+      if (badge)  badge.classList.add("hidden");
       if (footer) footer.textContent = "";
       return;
     }
 
-    empty.classList.add("hidden");
-    badge.classList.remove("hidden");
-    badge.textContent = notifications.length > 99 ? "99+" : notifications.length;
+    if (empty)  empty.classList.add("hidden");
+    if (badge) {
+      badge.classList.remove("hidden");
+      badge.textContent = notifications.length > 99 ? "99+" : notifications.length;
+    }
     if (footer) footer.textContent = notifications.length + " unread";
 
     notifications.forEach(order => {
-      const item = document.createElement("a");
-      item.href = "/admin/orders";
-      item.className = "notif-item flex items-start gap-3 px-4 py-3 hover:bg-green-50 transition-colors cursor-pointer border-b border-zinc-50 last:border-0";
-      item.innerHTML = `
+      const a = document.createElement("a");
+      a.href = "/admin/orders";
+      a.className = "notif-item flex items-start gap-3 px-4 py-3 hover:bg-green-50 transition-colors border-b border-zinc-50 last:border-0";
+      a.innerHTML = `
         <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0 mt-0.5">
           <svg class="w-4 h-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -859,140 +860,136 @@ function proceedToCheckout() {
           <p class="text-xs font-black text-zinc-900">New Order — Rs. ${order.total.toLocaleString("en-IN")}</p>
           <p class="text-[10px] text-zinc-400 font-medium mt-0.5 truncate">${order.email}</p>
           <p class="text-[10px] text-green-600 font-bold mt-0.5">${timeAgo(order.created_at)}</p>
-        </div>
-        <button onclick="dismissNotification(event, '${order.id}')"
-          class="shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-zinc-300 hover:text-red-400 transition-colors mt-0.5">
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>`;
-      list.insertBefore(item, empty);
+        </div>`;
+      list.insertBefore(a, empty);
     });
   }
 
-  async function pollNotifications() {
+  // ── Full fetch: load ALL notifications since last clear (cross-browser) ──
+  async function fetchAllNotifications() {
     try {
-      const res = await fetch(`/admin/notifications?since=${encodeURIComponent(lastChecked)}`);
+      const res  = await fetch("/admin/notifications");
       if (!res.ok) return;
       const data = await res.json();
-
-      lastChecked = new Date().toISOString();
-      localStorage.setItem("gr_last_checked", lastChecked);
-
-      if (data.orders && data.orders.length > 0) {
-        const existingIds = new Set(notifications.map(n => n.id));
-        const fresh = data.orders.filter(o => !existingIds.has(o.id));
-
-        if (fresh.length > 0) {
-          notifications = [...fresh, ...notifications];
-          saveToDisk(notifications);
-          renderNotifications();
-
-          // Sound
-          playNotifSound();
-
-          // Bell shake animation
-          const bellIcon = document.getElementById("notifBell");
-          if (bellIcon) {
-            bellIcon.style.animation = "none";
-            setTimeout(() => { bellIcon.style.animation = "bellShake 0.6s ease"; }, 10);
-          }
-
-          // Toast popup
-          showNewOrderToast(fresh.length, fresh[0]);
-
-          // Browser notification
-          if (Notification.permission === "granted") {
-            new Notification("🛒 GardenRich — New Order!", {
-              body: fresh.length === 1
-                ? `Rs. ${fresh[0].total.toLocaleString("en-IN")} from ${fresh[0].email}`
-                : `${fresh.length} new orders received`,
-              icon: "/favicon.ico",
-              badge: "/favicon.ico",
-            });
-          }
-        }
-      }
-    } catch (e) {}
+      notifications = data.orders || [];
+      lastPolled    = new Date().toISOString();
+      renderPanel();
+    } catch (_) {}
   }
 
-  function showNewOrderToast(count, order) {
-    const existing = document.getElementById("orderToast");
-    if (existing) existing.remove();
-    const toast = document.createElement("div");
-    toast.id = "orderToast";
-    toast.className = "fixed top-20 right-4 z-[9999] bg-zinc-900 text-white rounded-2xl shadow-2xl p-4 flex items-start gap-3 max-w-xs cursor-pointer";
-    toast.onclick = () => { toast.remove(); window.location.href = "/admin/orders"; };
-    toast.innerHTML = `
+  // ── Incremental poll: only fetch what's new since last poll ──
+  async function pollNew() {
+    if (!lastPolled) { await fetchAllNotifications(); return; }
+    try {
+      const res  = await fetch(`/admin/notifications?since=${encodeURIComponent(lastPolled)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      lastPolled  = new Date().toISOString();
+
+      const fresh = (data.orders || []).filter(
+        o => !notifications.find(n => n.id === o.id)
+      );
+
+      if (fresh.length > 0) {
+        notifications = [...fresh, ...notifications];
+        renderPanel();
+        playNotifSound();
+
+        // Bell shake
+        const bell = document.getElementById("notifBell");
+        if (bell) {
+          bell.style.animation = "none";
+          setTimeout(() => { bell.style.animation = "bellShake 0.6s ease"; }, 10);
+        }
+
+        // Toast
+        showToast(fresh[0], fresh.length);
+
+        // Browser notification
+        if (Notification?.permission === "granted") {
+          new Notification("🛒 GardenRich — New Order!", {
+            body: fresh.length === 1
+              ? `Rs. ${fresh[0].total.toLocaleString("en-IN")} · ${fresh[0].email}`
+              : `${fresh.length} new orders just came in`,
+            icon: "/favicon.ico",
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── Toast popup ───────────────────────────────────────────
+  function showToast(order, count) {
+    document.getElementById("orderToast")?.remove();
+    const t = document.createElement("div");
+    t.id = "orderToast";
+    t.className = "fixed top-20 right-4 z-[9999] bg-zinc-900 text-white rounded-2xl shadow-2xl p-4 flex items-start gap-3 max-w-xs cursor-pointer animate-[slideIn_0.3s_ease]";
+    t.onclick = () => window.location.href = "/admin/orders";
+    t.innerHTML = `
       <div class="w-9 h-9 bg-green-500 rounded-full flex items-center justify-center shrink-0">
         <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
         </svg>
       </div>
-      <div>
-        <p class="text-xs font-black">New Order Received! 🎉</p>
+      <div class="flex-1">
+        <p class="text-xs font-black">New Order! 🎉</p>
         <p class="text-[10px] text-zinc-300 mt-0.5">Rs. ${order.total.toLocaleString("en-IN")} · ${order.email}</p>
-        <p class="text-[9px] text-zinc-400 mt-1">Click to view orders</p>
+        <p class="text-[9px] text-zinc-400 mt-1">Click to view</p>
       </div>
-      <button onclick="event.stopPropagation();this.closest('#orderToast').remove()"
-        class="ml-auto text-zinc-400 hover:text-white transition-colors shrink-0">✕</button>`;
-    document.body.appendChild(toast);
+      <button onclick="event.stopPropagation();document.getElementById('orderToast').remove()"
+        class="text-zinc-400 hover:text-white ml-1 shrink-0">✕</button>`;
+    document.body.appendChild(t);
     setTimeout(() => {
-      if (toast.parentNode) {
-        toast.style.opacity = "0";
-        toast.style.transition = "opacity 0.4s ease";
-        setTimeout(() => toast.remove(), 400);
-      }
+      if (t.parentNode) { t.style.opacity = "0"; t.style.transition = "opacity 0.4s"; setTimeout(() => t.remove(), 400); }
     }, 5000);
   }
 
-  // Dismiss a single notification
-  window.dismissNotification = function(e, orderId) {
-    e.preventDefault();
-    e.stopPropagation();
-    notifications = notifications.filter(n => n.id !== orderId);
-    saveToDisk(notifications);
-    renderNotifications();
-  };
-
-  // Expose clear function globally
-  window._clearNotifications = function() {
+  // ── Clear all (writes to DB — cross-browser) ──────────────
+  window._clearNotifications = async function() {
+    try {
+      await fetch("/admin/notifications/clear", { method: "POST" });
+    } catch (_) {}
     notifications = [];
-    saveToDisk(notifications);
-    renderNotifications();
-    const panel = document.getElementById("notifPanel");
-    if (panel) panel.classList.add("hidden");
+    renderPanel();
+    document.getElementById("notifPanel")?.classList.add("hidden");
   };
 
-  // Request browser notification permission
-  if (Notification && Notification.permission === "default") {
-    Notification.requestPermission();
-  }
+  // ── Bell toggle ───────────────────────────────────────────
+  window.toggleNotifPanel = function(e) {
+    e.stopPropagation();
+    const panel = document.getElementById("notifPanel");
+    if (!panel) return;
+    panel.classList.toggle("hidden");
+  };
 
-  // Inject bell shake keyframe
+  // Close on outside click
+  document.addEventListener("click", (e) => {
+    const wrapper = document.getElementById("notifWrapper");
+    if (wrapper && !wrapper.contains(e.target)) {
+      document.getElementById("notifPanel")?.classList.add("hidden");
+    }
+  });
+
+  // ── Inject styles ─────────────────────────────────────────
   if (!document.getElementById("notifStyles")) {
-    const style = document.createElement("style");
-    style.id = "notifStyles";
-    style.textContent = `
+    const s = document.createElement("style");
+    s.id = "notifStyles";
+    s.textContent = `
       @keyframes bellShake {
-        0%,100% { transform: rotate(0); }
-        15% { transform: rotate(18deg); }
-        30% { transform: rotate(-16deg); }
-        45% { transform: rotate(12deg); }
-        60% { transform: rotate(-8deg); }
-        75% { transform: rotate(5deg); }
-      }
-    `;
-    document.head.appendChild(style);
+        0%,100%{transform:rotate(0)} 15%{transform:rotate(18deg)}
+        30%{transform:rotate(-16deg)} 45%{transform:rotate(12deg)}
+        60%{transform:rotate(-8deg)} 75%{transform:rotate(5deg)}
+      }`;
+    document.head.appendChild(s);
   }
 
-  // Initial render from localStorage + start polling every 20s
-  renderNotifications();
-  pollNotifications();
-  setInterval(pollNotifications, 20000);
+  // ── Browser notification permission ──────────────────────
+  if (Notification?.permission === "default") Notification.requestPermission();
 
-  // Refresh timeAgo labels every minute
-  setInterval(renderNotifications, 60000);
+  // ── Init ──────────────────────────────────────────────────
+  fetchAllNotifications();                    // load existing on page open
+  setInterval(pollNew, 10000);               // poll every 10s for new ones
+  setInterval(renderPanel, 60000);           // refresh timeAgo labels
 })();
 // Close notification panel when clicking outside
 document.addEventListener("click", function(e) {
