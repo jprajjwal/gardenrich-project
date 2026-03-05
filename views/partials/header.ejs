@@ -48,9 +48,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
                         </svg>
-                        <!-- Badge -->
                         <span id="notifBadge"
-                            class="hidden absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-black min-w-[18px] h-[18px] flex items-center justify-center rounded-full ring-2 ring-white px-1">
+                            class="hidden absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-black min-w-[18px] h-[18px] items-center justify-center rounded-full ring-2 ring-white px-1">
                             0
                         </span>
                     </button>
@@ -58,25 +57,38 @@
                     <!-- Notification Panel -->
                     <div id="notifPanel"
                         class="hidden absolute right-0 mt-3 w-80 bg-white border border-zinc-100 rounded-2xl shadow-2xl z-50 overflow-hidden ring-1 ring-black/5">
+
+                        <!-- Header -->
                         <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-100 bg-zinc-50">
-                            <p class="text-xs font-black uppercase tracking-widest text-zinc-500">New Orders</p>
-                            <button onclick="clearAllNotifications()"
+                            <div>
+                                <p class="text-xs font-black uppercase tracking-widest text-zinc-700">Notifications</p>
+                                <p id="notifSubtitle" class="text-[10px] text-zinc-400 font-medium mt-0.5">New orders will appear here</p>
+                            </div>
+                            <button onclick="_clearNotifications()"
                                 class="text-[10px] font-black text-red-400 hover:text-red-600 transition-colors uppercase tracking-widest">
                                 Clear All
                             </button>
                         </div>
-                        <div id="notifList" class="max-h-80 overflow-y-auto divide-y divide-zinc-50">
-                            <div id="notifEmpty" class="flex flex-col items-center justify-center py-8 text-center">
-                                <svg class="w-8 h-8 text-zinc-200 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                                </svg>
-                                <p class="text-xs font-bold text-zinc-400">No new orders</p>
+
+                        <!-- List -->
+                        <div id="notifList" class="max-h-80 overflow-y-auto">
+                            <div id="notifEmpty" class="flex flex-col items-center justify-center py-10 text-center px-4">
+                                <div class="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mb-3">
+                                    <svg class="w-6 h-6 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                    </svg>
+                                </div>
+                                <p class="text-xs font-black text-zinc-500">All caught up!</p>
+                                <p class="text-[10px] text-zinc-400 mt-1">No new orders right now</p>
                             </div>
                         </div>
-                        <div class="px-4 py-2.5 border-t border-zinc-100 bg-zinc-50">
+
+                        <!-- Footer -->
+                        <div class="px-4 py-3 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between">
+                            <p id="notifFooterCount" class="text-[10px] text-zinc-400 font-bold"></p>
                             <a href="/admin/orders"
-                                class="block text-center text-xs font-black text-green-700 hover:text-green-800 transition-colors uppercase tracking-widest">
+                                class="text-xs font-black text-green-700 hover:text-green-800 transition-colors uppercase tracking-widest">
                                 View All Orders →
                             </a>
                         </div>
