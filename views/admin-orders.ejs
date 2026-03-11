@@ -18,67 +18,46 @@
 
         <!-- Key Stats -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-
-            <!-- Today's Orders -->
             <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-3">
                     <div class="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center">
-                        <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     </div>
                     <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Today's Orders</p>
                 </div>
                 <p class="text-4xl font-black text-zinc-900"><%= todayOrders.length %></p>
                 <p class="text-sm font-bold text-zinc-400 mt-1">Orders placed today</p>
             </div>
-
-            <!-- Today's Revenue -->
             <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-3">
                     <div class="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
-                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     </div>
                     <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Today's Revenue</p>
                 </div>
-                <p class="text-4xl font-black text-green-700">
-                    Rs. <%= todayOrders.reduce((acc, o) => acc + o.total, 0).toFixed(0) %>
-                </p>
+                <p class="text-4xl font-black text-green-700">Rs. <%= todayOrders.reduce((acc, o) => acc + o.total, 0).toLocaleString('en-IN') %></p>
                 <p class="text-sm font-bold text-zinc-400 mt-1">Collected today</p>
             </div>
-
-            <!-- This Month's Orders -->
             <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-3">
                     <div class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                     </div>
                     <p class="text-xs font-black uppercase tracking-widest text-zinc-400">This Month</p>
                 </div>
                 <p class="text-4xl font-black text-zinc-900"><%= thisMonthOrders %></p>
                 <p class="text-sm font-bold text-zinc-400 mt-1">Orders this month</p>
             </div>
-
-            <!-- This Month's Revenue -->
             <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-3">
                     <div class="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-                        </svg>
+                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                     </div>
                     <p class="text-xs font-black uppercase tracking-widest text-zinc-400">Month Revenue</p>
                 </div>
-                <p class="text-4xl font-black text-purple-700">
-                    Rs. <%= thisMonthRevenue.toFixed(0) %>
-                </p>
+                <p class="text-4xl font-black text-purple-700">Rs. <%= thisMonthRevenue.toLocaleString('en-IN') %></p>
                 <p class="text-sm font-bold text-zinc-400 mt-1">Revenue this month</p>
             </div>
-
         </div>
 
         <!-- Monthly Breakdown -->
@@ -95,14 +74,12 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <% Object.entries(monthlyStats).forEach(([month, stat]) => { %>
+                        <% Object.entries(monthlyStats).reverse().forEach(([month, stat]) => { %>
                         <tr class="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
-                            <td class="py-3 px-4 font-bold text-zinc-800">
-<%= new Date(month + '-02T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) %>
-                            </td>
+                            <td class="py-3 px-4 font-bold text-zinc-800"><%= new Date(month + '-02T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) %></td>
                             <td class="py-3 px-4 font-bold text-zinc-700"><%= stat.count %></td>
-                            <td class="py-3 px-4 font-black text-green-700">Rs. <%= stat.total.toFixed(2) %></td>
-                            <td class="py-3 px-4 font-bold text-zinc-500">Rs. <%= (stat.total / stat.count).toFixed(2) %></td>
+                            <td class="py-3 px-4 font-black text-green-700">Rs. <%= stat.total.toLocaleString('en-IN') %></td>
+                            <td class="py-3 px-4 font-bold text-zinc-500">Rs. <%= Math.round(stat.total / stat.count).toLocaleString('en-IN') %></td>
                         </tr>
                         <% }) %>
                     </tbody>
@@ -110,79 +87,90 @@
             </div>
         </div>
 
+        <!-- Search + Filter -->
+        <form method="GET" action="/admin/orders" id="filterForm">
+            <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                <div class="relative flex-1">
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <input id="searchInput" name="search" type="text"
+                        value="<%= searchQuery %>"
+                        placeholder="Search by name or email"
+                        class="w-full pl-9 pr-4 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:border-green-500 bg-white transition-all">
+                </div>
+                <input type="hidden" name="status" value="<%= statusFilter %>">
+                <button type="submit" class="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all shrink-0">
+                    Search
+                </button>
+                <% if (searchQuery) { %>
+                <a href="/admin/orders?status=<%= statusFilter %>" class="px-4 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-500 hover:bg-zinc-50 transition-all shrink-0 flex items-center">
+                    Clear
+                </a>
+                <% } %>
+            </div>
+        </form>
+
         <!-- Filter Tabs -->
-        <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-            <button onclick="filterOrders('all')" id="tab-all"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-zinc-900 text-white">
-                All Orders (<%= orders.length %>)
-            </button>
-            <button onclick="filterOrders('pending')" id="tab-pending"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
-                Pending (<%= orders.filter(o => o.status === 'pending').length %>)
-            </button>
-            <button onclick="filterOrders('confirmed')" id="tab-confirmed"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
-                Confirmed (<%= orders.filter(o => o.status === 'confirmed').length %>)
-            </button>
-            <button onclick="filterOrders('shipped')" id="tab-shipped"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
-                Shipped (<%= orders.filter(o => o.status === 'shipped').length %>)
-            </button>
-            <button onclick="filterOrders('delivered')" id="tab-delivered"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
-                Delivered (<%= orders.filter(o => o.status === 'delivered').length %>)
-            </button>
-            <button onclick="filterOrders('cancelled')" id="tab-cancelled"
-                class="filter-tab whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50">
-                Cancelled (<%= orders.filter(o => o.status === 'cancelled').length %>)
-            </button>
+        <div class="flex gap-2 mb-2 overflow-x-auto pb-2">
+            <% ['all','pending','confirmed','shipped','delivered','cancelled'].forEach(s => { %>
+            <a href="/admin/orders?status=<%= s %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+                class="whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all <%= statusFilter === s ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50' %>">
+                <%= s.charAt(0).toUpperCase() + s.slice(1) %> (<%= statusCounts[s] %>)
+            </a>
+            <% }) %>
+        </div>
+
+        <!-- Result info -->
+        <div class="flex items-center justify-between mb-4">
+            <p class="text-xs font-bold text-zinc-400">
+                Showing <%= (currentPage - 1) * 10 + 1 %>–<%= Math.min(currentPage * 10, totalOrders) %> of <%= totalOrders %> orders
+            </p>
         </div>
 
         <!-- Orders List -->
-        <div id="ordersContainer" class="space-y-4">
+        <div class="space-y-4">
             <% orders.forEach(order => { %>
-            <div class="order-card bg-white rounded-2xl border border-zinc-100 shadow-sm p-6"
-                data-status="<%= order.status %>">
+            <div class="order-card bg-white rounded-2xl border border-zinc-100 shadow-sm p-6 transition-all" data-status="<%= order.status %>">
                 <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
 
                     <!-- Customer Info -->
-                    <div class="flex-1">
-                        <div class="flex items-center gap-3 mb-3">
-                            <span class="status-badge text-xs font-black px-3 py-1 rounded-full
-                                <%= order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                                    order.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-                                    order.status === 'shipped' ? 'bg-purple-100 text-purple-700' :
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-3 mb-3 flex-wrap">
+                            <span class="text-xs font-black px-3 py-1 rounded-full
+                                <%= order.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
+                                    order.status === 'confirmed' ? 'bg-blue-100 text-blue-700'   :
+                                    order.status === 'shipped'   ? 'bg-purple-100 text-purple-700':
                                     order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                                    order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                                    order.status === 'cancelled' ? 'bg-red-100 text-red-700'     :
                                     'bg-zinc-100 text-zinc-700' %>">
                                 <%= order.status.charAt(0).toUpperCase() + order.status.slice(1) %>
                             </span>
-                            <span class="text-xs text-zinc-400 font-bold">
-                                <%= toISTDisplay(order.created_at) %>
-                            </span>
+                            <span class="text-xs text-zinc-400 font-bold"><%= toISTDisplay(order.created_at) %></span>
+                            <span class="text-[10px] font-black text-zinc-300 font-mono">#<%= order.id.toString().slice(0, 8) %></span>
                         </div>
-                        <p class="font-black text-zinc-900 text-lg">
-                            <%= order.addresses?.first_name %> <%= order.addresses?.last_name %>
-                        </p>
-                        <p class="text-sm text-zinc-500"><%= order.addresses?.phone %></p>
+                        <p class="font-black text-zinc-900 text-lg leading-tight"><%= order.addresses?.first_name %> <%= order.addresses?.last_name %></p>
+                        <p class="text-sm text-zinc-500 mt-0.5"><%= order.addresses?.phone %></p>
                         <p class="text-sm text-zinc-500"><%= order.email %></p>
-                        <p class="text-sm text-zinc-500 mt-1">
-                            <%= order.addresses?.address %>, <%= order.addresses?.city %> - <%= order.addresses?.pin_code %>
-                        </p>
+                        <p class="text-sm text-zinc-400 mt-1 leading-snug"><%= order.addresses?.address %>, <%= order.addresses?.city %> — <%= order.addresses?.pin_code %></p>
                     </div>
 
                     <!-- Items -->
-                    <div class="flex-1">
+                    <div class="flex-1 min-w-0">
                         <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Items</p>
-                        <% order.order_items.forEach(item => { %>
-                        <div class="flex justify-between text-sm py-1.5 border-b border-zinc-50 last:border-0">
-                            <span class="font-bold text-zinc-700">
-                                <%= item.product_name %>
-                                <span class="text-zinc-400 font-medium">x<%= item.quantity %></span>
-                            </span>
-                            <span class="font-black text-zinc-900">Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %></span>
-                        </div>
-                        <% }) %>
+                        <% if (order.order_items && order.order_items.length > 0) { %>
+                            <% order.order_items.forEach(item => { %>
+                            <div class="flex justify-between text-sm py-1.5 border-b border-zinc-50 last:border-0">
+                                <span class="font-bold text-zinc-700 truncate mr-2"><%= item.product_name %> <span class="text-zinc-400 font-medium">×<%= item.quantity %></span></span>
+                                <span class="font-black text-zinc-900 shrink-0">Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %></span>
+                            </div>
+                            <% }) %>
+                        <% } else { %>
+                            <div class="flex items-center gap-2 py-2">
+                                <svg class="w-3.5 h-3.5 text-zinc-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <p class="text-xs text-zinc-400">Item details unavailable — order placed before system update</p>
+                            </div>
+                        <% } %>
                         <div class="flex justify-between mt-2 pt-2 border-t border-zinc-100">
                             <span class="text-sm font-black text-zinc-900">Total</span>
                             <span class="text-sm font-black text-green-700">Rs. <%= order.total.toLocaleString('en-IN') %></span>
@@ -190,7 +178,7 @@
                     </div>
 
                     <!-- Status Update -->
-                    <div class="md:w-44">
+                    <div class="md:w-44 shrink-0">
                         <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Update Status</p>
                         <select onchange="updateStatus('<%= order.id %>', this)"
                             class="w-full p-3 rounded-xl border border-zinc-200 outline-none focus:border-green-600 text-sm font-bold bg-white transition-all cursor-pointer">
@@ -200,15 +188,70 @@
                             <option value="delivered" <%= order.status === 'delivered' ? 'selected' : '' %>>Delivered</option>
                             <option value="cancelled" <%= order.status === 'cancelled' ? 'selected' : '' %>>Cancelled</option>
                         </select>
-                        <p class="text-[10px] text-zinc-400 font-bold mt-2 text-center">
-                            #<%= order.id.toString().slice(0, 8) %>
-                        </p>
                     </div>
 
                 </div>
             </div>
             <% }) %>
+
+            <% if (orders.length === 0) { %>
+            <div class="text-center py-16">
+                <div class="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                </div>
+                <p class="text-zinc-500 font-bold">No orders found</p>
+                <p class="text-zinc-400 text-sm mt-1">Try a different search or filter</p>
+            </div>
+            <% } %>
         </div>
+
+        <!-- Pagination -->
+        <% if (totalPages > 1) { %>
+        <div class="flex items-center justify-center gap-2 mt-10">
+
+            <!-- Prev -->
+            <% if (currentPage > 1) { %>
+            <a href="/admin/orders?page=<%= currentPage - 1 %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+                class="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Prev
+            </a>
+            <% } else { %>
+            <span class="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl text-sm font-bold text-zinc-300 cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Prev
+            </span>
+            <% } %>
+
+            <!-- Page numbers -->
+            <% for (let p = 1; p <= totalPages; p++) { %>
+                <% if (p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)) { %>
+                <a href="/admin/orders?page=<%= p %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+                    class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-black transition-all
+                    <%= p === currentPage ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50' %>">
+                    <%= p %>
+                </a>
+                <% } else if (p === currentPage - 3 || p === currentPage + 3) { %>
+                <span class="w-10 h-10 flex items-center justify-center text-zinc-300 font-bold">…</span>
+                <% } %>
+            <% } %>
+
+            <!-- Next -->
+            <% if (currentPage < totalPages) { %>
+            <a href="/admin/orders?page=<%= currentPage + 1 %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+                class="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
+                Next
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </a>
+            <% } else { %>
+            <span class="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl text-sm font-bold text-zinc-300 cursor-not-allowed">
+                Next
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </span>
+            <% } %>
+
+        </div>
+        <% } %>
 
     </div>
 

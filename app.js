@@ -809,52 +809,95 @@ app.delete("/admin/delete-product/:id", isAdmin, async (req, res) => {
 });
 
 app.get("/admin/orders", isAdmin, async (req, res) => {
-  // Use supabaseAdmin (service key) to bypass RLS on orders table
   const adminClient = supabaseAdmin || supabase;
-  const { data: rawOrders, error: ordersError } = await adminClient
+  const PAGE_SIZE = 10;
+
+  // Pagination params
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const statusFilter = req.query.status || 'all';
+  const searchQuery = (req.query.search || '').trim().toLowerCase();
+
+  // --- Stats: always computed from ALL orders (no pagination) ---
+  const { data: allOrders, error: allErr } = await adminClient
     .from("orders")
-    .select("*, addresses(*)")
+    .select("id, total, created_at, status, email")
     .order("created_at", { ascending: false });
 
-  if (ordersError) console.error("Orders fetch error:", ordersError.message);
+  if (allErr) console.error("All orders fetch error:", allErr.message);
 
-  // Fetch order_items separately for each order
-  const orders = await Promise.all(
-    (rawOrders || []).map(async (order) => {
-      const { data: items, error: itemsErr } = await adminClient
-        .from("order_items")
-        .select("*")
-        .eq("order_id", order.id);
-      if (itemsErr) console.error("Items fetch error for order", order.id, ":", itemsErr.message);
-      return { ...order, order_items: items || [] };
-    })
-  );
-
-  // Use IST date (UTC+5:30) — manually add 330 min offset (reliable across all Node envs)
   const nowIST = new Date(Date.now() + IST_OFFSET);
   const today = nowIST.toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
 
-  const todayOrders = orders.filter((o) => toISTDate(o.created_at) === today);
-  const thisMonthOrders = orders.filter((o) => toISTMonth(o.created_at) === thisMonth).length;
-  const thisMonthRevenue = orders
-    .filter((o) => toISTMonth(o.created_at) === thisMonth)
+  const todayOrders = (allOrders || []).filter(o => toISTDate(o.created_at) === today);
+  const thisMonthOrders = (allOrders || []).filter(o => toISTMonth(o.created_at) === thisMonth).length;
+  const thisMonthRevenue = (allOrders || [])
+    .filter(o => toISTMonth(o.created_at) === thisMonth)
     .reduce((acc, o) => acc + o.total, 0);
 
   const monthlyStats = {};
-  orders.forEach((order) => {
+  (allOrders || []).forEach(order => {
     const month = toISTMonth(order.created_at);
     if (!monthlyStats[month]) monthlyStats[month] = { count: 0, total: 0 };
     monthlyStats[month].count += 1;
     monthlyStats[month].total += order.total;
   });
 
+  // Status counts for tab badges
+  const statusCounts = { all: (allOrders || []).length };
+  ['pending','confirmed','shipped','delivered','cancelled'].forEach(s => {
+    statusCounts[s] = (allOrders || []).filter(o => o.status === s).length;
+  });
+
+  // --- Paginated orders fetch ---
+  let query = adminClient
+    .from("orders")
+    .select("*, addresses(*)")
+    .order("created_at", { ascending: false });
+
+  if (statusFilter !== 'all') query = query.eq("status", statusFilter);
+
+  const { data: rawOrders, error: ordersError } = await query;
+  if (ordersError) console.error("Orders fetch error:", ordersError.message);
+
+  // Apply search filter in memory (name, email, id)
+  let filteredOrders = (rawOrders || []).filter(order => {
+    if (!searchQuery) return true;
+    const name = ((order.addresses?.first_name || '') + ' ' + (order.addresses?.last_name || '')).toLowerCase();
+    const email = (order.email || '').toLowerCase();
+    const id = (order.id || '').toString().toLowerCase();
+    return name.includes(searchQuery) || email.includes(searchQuery) || id.includes(searchQuery);
+  });
+
+  const totalOrders = filteredOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // Fetch order_items for this page only
+  const orders = await Promise.all(
+    paginatedOrders.map(async (order) => {
+      const { data: items, error: itemsErr } = await adminClient
+        .from("order_items")
+        .select("*")
+        .eq("order_id", order.id);
+      if (itemsErr) console.error(`order_items error for ${order.id}:`, itemsErr.message);
+      return { ...order, order_items: items || [] };
+    })
+  );
+
   res.render("admin-orders", {
-    orders: orders,
+    orders,
     todayOrders,
     thisMonthOrders,
     thisMonthRevenue,
     monthlyStats,
+    statusCounts,
+    currentPage,
+    totalPages,
+    totalOrders,
+    statusFilter,
+    searchQuery,
     toISTDisplay,
   });
 });
