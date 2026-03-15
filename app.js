@@ -1436,6 +1436,7 @@ app.post("/checkout", async (req, res) => {
       product_image: item.product_image,
       quantity: item.quantity,
       price: item.price,
+      variant_weight: item.weight || null,
     }));
 
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems);

@@ -96,7 +96,7 @@
                     </svg>
                     <input id="searchInput" name="search" type="text"
                         value="<%= searchQuery %>"
-                        placeholder="Search by name or email"
+                        placeholder="Search by name, email or order ID…"
                         class="w-full pl-9 pr-4 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:border-green-500 bg-white transition-all">
                 </div>
                 <input type="hidden" name="status" value="<%= statusFilter %>">
@@ -157,21 +157,31 @@
 
                     <!-- Items -->
                     <div class="flex-1 min-w-0">
-                        <p class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Items</p>
                         <% if (order.order_items && order.order_items.length > 0) { %>
-                            <% order.order_items.forEach(item => { %>
-                            <div class="flex justify-between text-sm py-1.5 border-b border-zinc-50 last:border-0">
-                                <span class="font-bold text-zinc-700 truncate mr-2"><%= item.product_name %> <span class="text-zinc-400 font-medium">×<%= item.quantity %></span></span>
-                                <span class="font-black text-zinc-900 shrink-0">Rs. <%= (item.price * item.quantity).toLocaleString('en-IN') %></span>
+                        <button onclick="openOrderItems('<%= order.id %>')"
+                            class="group w-full flex items-center justify-between gap-3 bg-zinc-50 hover:bg-green-50 border border-zinc-100 hover:border-green-200 rounded-xl px-4 py-3 transition-all">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 bg-white border border-zinc-200 group-hover:border-green-300 rounded-lg flex items-center justify-center transition-all">
+                                    <svg class="w-4 h-4 text-zinc-400 group-hover:text-green-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                </div>
+                                <div class="text-left">
+                                    <p class="text-xs font-black text-zinc-700 group-hover:text-green-800 transition-colors"><%= order.order_items.length %> item<%= order.order_items.length !== 1 ? 's' : '' %></p>
+                                    <p class="text-[10px] text-zinc-400 font-medium">Click to view details</p>
+                                </div>
                             </div>
-                            <% }) %>
+                            <svg class="w-4 h-4 text-zinc-300 group-hover:text-green-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </button>
                         <% } else { %>
-                            <div class="flex items-center gap-2 py-2">
-                                <svg class="w-3.5 h-3.5 text-zinc-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                <p class="text-xs text-zinc-400">Item details unavailable — order placed before system update</p>
-                            </div>
+                        <div class="flex items-center gap-2 bg-zinc-50 rounded-xl px-4 py-3">
+                            <svg class="w-3.5 h-3.5 text-zinc-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <p class="text-xs text-zinc-400 font-medium">Item details unavailable</p>
+                        </div>
                         <% } %>
-                        <div class="flex justify-between mt-2 pt-2 border-t border-zinc-100">
+                        <div class="flex justify-between mt-3 pt-3 border-t border-zinc-100">
                             <span class="text-sm font-black text-zinc-900">Total</span>
                             <span class="text-sm font-black text-green-700">Rs. <%= order.total.toLocaleString('en-IN') %></span>
                         </div>
@@ -256,6 +266,139 @@
     </div>
 
     <%- include("partials/footer") %>
+
+
+    <!-- Order Items Modal -->
+    <div id="orderItemsModal" class="hidden fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeOrderItems()"></div>
+
+        <!-- Sheet / Panel -->
+        <div class="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+             style="max-height: 88vh;">
+
+            <!-- Drag handle (mobile) -->
+            <div class="flex justify-center pt-3 pb-1 sm:hidden shrink-0">
+                <div class="w-10 h-1 bg-zinc-200 rounded-full"></div>
+            </div>
+
+            <!-- Header -->
+            <div class="px-6 pt-4 pb-4 sm:pt-5 border-b border-zinc-100 shrink-0">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-black uppercase tracking-widest text-green-600 mb-0.5">Order Items</p>
+                        <h2 class="font-black text-zinc-900 text-lg leading-tight truncate" id="modalOrderTitle"></h2>
+                        <p class="text-xs text-zinc-400 font-medium mt-0.5" id="modalOrderMeta"></p>
+                    </div>
+                    <button onclick="closeOrderItems()"
+                        class="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-red-50 hover:text-red-500 transition-all text-zinc-400 mt-0.5">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Items list -->
+            <div class="overflow-y-auto flex-1 px-6 py-4 space-y-3" id="modalItemsList"></div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-zinc-100 shrink-0 bg-zinc-50/80">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-black text-zinc-500 uppercase tracking-widest">Order Total</span>
+                    <span class="text-2xl font-black text-green-700" id="modalOrderTotal"></span>
+                </div>
+                <p class="text-[12px] text-zinc-500 font-medium" id="modalItemCount"></p>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Embed order data -->
+    <script>
+    const ORDER_ITEMS_DATA = {
+        <% orders.forEach((order, i) => { %>
+        '<%= order.id %>': {
+            customer: '<%= ((order.addresses?.first_name || "") + " " + (order.addresses?.last_name || "")).trim().replace(/'/g, "\'") %>',
+            orderId: '#<%= order.id.toString().slice(0, 8) %>',
+            date: '<%= toISTDisplay(order.created_at) %>',
+            total: <%= order.total %>,
+            items: <%- JSON.stringify(order.order_items.map(item => ({
+                name: item.product_name,
+                qty: item.quantity,
+                price: item.price,
+                weight: item.variant_weight || '',
+                image: item.product_image || ''
+            }))) %>
+        }<%= i < orders.length - 1 ? ',' : '' %>
+        <% }) %>
+    };
+
+    function openOrderItems(orderId) {
+        const data = ORDER_ITEMS_DATA[orderId];
+        if (!data) return;
+
+        document.getElementById('modalOrderTitle').textContent = data.customer || 'Order Details';
+        document.getElementById('modalOrderMeta').textContent = data.orderId + '  ·  ' + data.date;
+        document.getElementById('modalOrderTotal').textContent = 'Rs. ' + data.total.toLocaleString('en-IN');
+        document.getElementById('modalItemCount').textContent =
+            data.items.length + ' item' + (data.items.length !== 1 ? 's' : '') +
+            '  ·  Total qty: ' + data.items.reduce((s, i) => s + i.qty, 0);
+
+        const list = document.getElementById('modalItemsList');
+        list.innerHTML = data.items.map((item, idx) => {
+            const lineTotal = (item.price * item.qty).toLocaleString('en-IN');
+            const unitPrice = item.price.toLocaleString('en-IN');
+            return `
+            <div class="flex items-center gap-4 bg-white border border-zinc-100 rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow">
+                <!-- Image -->
+                <div class="w-16 h-16 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-100 shrink-0">
+                    ${item.image
+                        ? `<img src="${item.image}" class="w-full h-full object-cover" loading="lazy">`
+                        : `<div class="w-full h-full flex items-center justify-center">
+                             <svg class="w-7 h-7 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                             </svg>
+                           </div>`
+                    }
+                </div>
+
+                <!-- Details -->
+                <div class="flex-1 min-w-0">
+                    <p class="font-black text-zinc-900 text-sm leading-tight truncate">${item.name}</p>
+                    <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                        ${item.weight ? `<span class="inline-flex items-center gap-1 bg-zinc-100 text-zinc-600 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            
+                            ${item.weight}
+                        </span>` : ''}
+                        <span class="inline-flex items-center bg-blue-50 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            ×${item.qty}
+                        </span>
+                        <span class="text-[10px] text-zinc-500 font-bold">@ Rs. ${unitPrice}</span>
+                    </div>
+                </div>
+
+                <!-- Line total -->
+                <div class="shrink-0 text-right">
+                    <p class="font-black text-zinc-900">Rs. ${lineTotal}</p>
+                </div>
+            </div>`;
+        }).join('');
+
+        const modal = document.getElementById('orderItemsModal');
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeOrderItems() {
+        document.getElementById('orderItemsModal').classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeOrderItems();
+    });
+    </script>
 
 </body>
 </html>
