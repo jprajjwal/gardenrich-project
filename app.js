@@ -311,6 +311,16 @@ app.post("/signup", async (req, res) => {
     return renderErr("This email is already registered. Please log in.");
   }
 
+  // Block rapid resubmits — if a pending signup already exists for the same email
+  // and was created less than 60 seconds ago, reject silently
+  if (req.session.pendingSignup && req.session.pendingSignup.email === email.trim().toLowerCase()) {
+    const elapsed = Date.now() - (req.session.pendingSignup.createdAt || 0);
+    if (elapsed < 60 * 1000) {
+      // Already sent recently — go straight to OTP page, don't send another email
+      return res.render("verify-otp", { email: email.trim(), error: null });
+    }
+  }
+
   // Generate OTP and store pending signup in session (expires in 10 min)
   // Auth user is NOT created yet — created only after OTP is verified
   const otp = generateOTP();
@@ -321,6 +331,7 @@ app.post("/signup", async (req, res) => {
     mobile: mobile.trim(),
     otp,
     expiresAt: Date.now() + 10 * 60 * 1000,
+    createdAt: Date.now(),
     attempts: 0,
   };
 
