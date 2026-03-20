@@ -16,7 +16,7 @@
             <h1 class="font-extrabold text-4xl mt-1 tracking-tight text-zinc-900">Orders Dashboard</h1>
         </div>
 
-        <!-- Key Stats -->
+        <!-- Key Stats (always current month) -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
             <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-3">
@@ -60,35 +60,115 @@
             </div>
         </div>
 
-        <!-- Monthly Breakdown -->
-        <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6 mb-10">
-            <h2 class="text-xs font-black uppercase tracking-widest text-zinc-400 mb-4">Month-wise Breakdown</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-zinc-100">
-                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Month</th>
-                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Orders</th>
-                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Revenue</th>
-                            <th class="text-left py-3 px-4 text-xs font-black uppercase tracking-widest text-zinc-400">Avg Order</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <% Object.entries(monthlyStats).reverse().forEach(([month, stat]) => { %>
-                        <tr class="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
-                            <td class="py-3 px-4 font-bold text-zinc-800"><%= new Date(month + '-02T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) %></td>
-                            <td class="py-3 px-4 font-bold text-zinc-700"><%= stat.count %></td>
-                            <td class="py-3 px-4 font-black text-green-700">Rs. <%= stat.total.toLocaleString('en-IN') %></td>
-                            <td class="py-3 px-4 font-bold text-zinc-500">Rs. <%= Math.round(stat.total / stat.count).toLocaleString('en-IN') %></td>
-                        </tr>
-                        <% }) %>
-                    </tbody>
-                </table>
+        
+
+        <!-- ── Month Navigator ──────────────────────────────── -->
+        <%
+            const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const nowM = new Date(Date.now() + 330*60*1000);
+            const nowYear  = nowM.getUTCFullYear();
+            const nowMonth = nowM.getUTCMonth() + 1;
+
+            // Year range: first order year → current year
+            const allYears = Object.keys(monthlyStats).map(m => parseInt(m.split('-')[0]));
+            const minYear = allYears.length > 0 ? Math.min(...allYears) : nowYear;
+            const maxYear = nowYear;
+
+            // Months with data in selected year (as set)
+            const monthsWithData = new Set(
+                Object.keys(monthlyStats)
+                    .filter(m => m.startsWith(selectedYear + '-'))
+                    .map(m => parseInt(m.split('-')[1]))
+            );
+        %>
+        <div class="bg-white border border-zinc-100 rounded-2xl shadow-sm overflow-hidden mb-6">
+
+            <!-- Year navigator -->
+            <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-50">
+                <% if (selectedYear > minYear) { %>
+                <a href="/admin/orders?year=<%= selectedYear - 1 %>&month=<%= selectedMonth %>&status=<%= statusFilter %>"
+                   class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 hover:border-green-400 hover:bg-green-50 text-zinc-500 hover:text-green-700 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </a>
+                <% } else { %>
+                <span class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-400 text-zinc-400 cursor-not-allowed">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </span>
+                <% } %>
+
+                <div class="text-center">
+                    <p class="font-black text-zinc-900 text-xl tracking-tight"><%= selectedYear %></p>
+                    <p class="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">Select a month below</p>
+                </div>
+
+                <% if (selectedYear < maxYear) { %>
+                <a href="/admin/orders?year=<%= selectedYear + 1 %>&month=<%= selectedMonth %>&status=<%= statusFilter %>"
+                   class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 hover:border-green-400 hover:bg-green-50 text-zinc-500 hover:text-green-700 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+                <% } else { %>
+                <span class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-400 text-zinc-400 cursor-not-allowed">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </span>
+                <% } %>
+            </div>
+
+            <!-- Month grid (3×4) -->
+            <div class="grid grid-cols-4 sm:grid-cols-6 gap-1.5 p-4">
+                <% for (let mo = 1; mo <= 12; mo++) {
+                    const isCurrent     = mo === selectedMonth && selectedYear === parseInt(selectedYear);
+                    const isSelected    = mo === selectedMonth;
+                    const hasData       = monthsWithData.has(mo);
+                    const isFutureMonth = selectedYear === nowYear && mo > nowMonth;
+                    const stat          = monthlyStats[selectedYear + '-' + String(mo).padStart(2,'0')];
+                %>
+                <% if (isFutureMonth) { %>
+                    <div class="flex flex-col items-center justify-center rounded-xl py-2.5 px-1 text-zinc-300 cursor-not-allowed select-none">
+                        <span class="text-xs font-black"><%= MONTH_SHORT[mo-1] %></span>
+                    </div>
+                <% } else { %>
+                    <a href="/admin/orders?year=<%= selectedYear %>&month=<%= mo %>&status=<%= statusFilter %>"
+                       class="flex flex-col items-center justify-center rounded-xl py-2.5 px-1 transition-all
+                           <%= isSelected
+                               ? 'bg-green-600 text-white shadow-md shadow-green-100'
+                               : hasData
+                                   ? 'bg-zinc-50 hover:bg-green-50 text-zinc-700 hover:text-green-700 border border-zinc-100 hover:border-green-200'
+                                   : 'text-zinc-400 hover:bg-zinc-100 border border-transparent hover:border-zinc-100' %>">
+                        <span class="text-xs font-black"><%= MONTH_SHORT[mo-1] %></span>
+                        <% if (stat) { %>
+                        <span class="text-[9px] font-bold mt-0.5 <%= isSelected ? 'text-green-100' : 'text-zinc-400' %>"><%= stat.count %> orders</span>
+                        <% } else { %>
+                        <span class="text-[9px] font-bold mt-0.5 <%= isSelected ? 'text-green-100' : 'text-zinc-300' %>">—</span>
+                        <% } %>
+                    </a>
+                <% } %>
+                <% } %>
+            </div>
+
+            <!-- Selected month summary bar -->
+            <div class="px-5 py-3 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <p class="text-sm font-black text-zinc-700"><%= MONTH_NAMES[selectedMonth-1] %> <%= selectedYear %></p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Orders</p>
+                        <p class="text-sm font-black text-zinc-900"><%= statusCounts.all %></p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Revenue</p>
+                        <p class="text-sm font-black text-green-700">Rs. <%= selectedMonthRevenue.toLocaleString('en-IN') %></p>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Search + Filter -->
         <form method="GET" action="/admin/orders" id="filterForm">
+            <input type="hidden" name="year" value="<%= selectedYear %>">
+            <input type="hidden" name="month" value="<%= selectedMonth %>">
             <div class="flex flex-col sm:flex-row gap-3 mb-4">
                 <div class="relative flex-1">
                     <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,7 +184,8 @@
                     Search
                 </button>
                 <% if (searchQuery) { %>
-                <a href="/admin/orders?status=<%= statusFilter %>" class="px-4 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-500 hover:bg-zinc-50 transition-all shrink-0 flex items-center">
+                <a href="/admin/orders?year=<%= selectedYear %>&month=<%= selectedMonth %>&status=<%= statusFilter %>"
+                   class="px-4 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-500 hover:bg-zinc-50 transition-all shrink-0 flex items-center">
                     Clear
                 </a>
                 <% } %>
@@ -114,7 +195,7 @@
         <!-- Filter Tabs -->
         <div class="flex gap-2 mb-2 overflow-x-auto pb-2">
             <% ['all','pending','confirmed','shipped','delivered','cancelled'].forEach(s => { %>
-            <a href="/admin/orders?status=<%= s %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+            <a href="/admin/orders?year=<%= selectedYear %>&month=<%= selectedMonth %>&status=<%= s %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
                 class="whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all <%= statusFilter === s ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50' %>">
                 <%= s.charAt(0).toUpperCase() + s.slice(1) %> (<%= statusCounts[s] %>)
             </a>
@@ -124,7 +205,11 @@
         <!-- Result info -->
         <div class="flex items-center justify-between mb-4">
             <p class="text-xs font-bold text-zinc-400">
-                Showing <%= (currentPage - 1) * 10 + 1 %>–<%= Math.min(currentPage * 10, totalOrders) %> of <%= totalOrders %> orders
+                <% if (totalOrders === 0) { %>
+                    No orders found for <%= MONTH_NAMES[selectedMonth-1] %> <%= selectedYear %>
+                <% } else { %>
+                    Showing <%= (currentPage - 1) * 10 + 1 %>–<%= Math.min(currentPage * 10, totalOrders) %> of <%= totalOrders %> orders · <%= MONTH_NAMES[selectedMonth-1] %> <%= selectedYear %>
+                <% } %>
             </p>
         </div>
 
@@ -137,7 +222,7 @@
                     <!-- Customer Info -->
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-3 mb-3 flex-wrap">
-                            <span class="text-xs font-black px-3 py-1 rounded-full
+                            <span class="status-badge text-xs font-black px-3 py-1 rounded-full
                                 <%= order.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
                                     order.status === 'confirmed' ? 'bg-blue-100 text-blue-700'   :
                                     order.status === 'shipped'   ? 'bg-purple-100 text-purple-700':
@@ -205,12 +290,15 @@
             <% }) %>
 
             <% if (orders.length === 0) { %>
-            <div class="text-center py-16">
+            <div class="text-center py-20">
                 <div class="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <svg class="w-8 h-8 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                 </div>
-                <p class="text-zinc-500 font-bold">No orders found</p>
-                <p class="text-zinc-400 text-sm mt-1">Try a different search or filter</p>
+                <p class="text-zinc-500 font-bold text-lg">No orders in <%= MONTH_NAMES[selectedMonth-1] %> <%= selectedYear %></p>
+                <p class="text-zinc-400 text-sm mt-1">Try a different month or clear the filter</p>
+                <a href="/admin/orders" class="inline-block mt-4 px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all">
+                    Back to current month
+                </a>
             </div>
             <% } %>
         </div>
@@ -218,10 +306,8 @@
         <!-- Pagination -->
         <% if (totalPages > 1) { %>
         <div class="flex items-center justify-center gap-2 mt-10">
-
-            <!-- Prev -->
             <% if (currentPage > 1) { %>
-            <a href="/admin/orders?page=<%= currentPage - 1 %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+            <a href="/admin/orders?page=<%= currentPage - 1 %>&year=<%= selectedYear %>&month=<%= selectedMonth %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
                 class="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                 Prev
@@ -233,10 +319,9 @@
             </span>
             <% } %>
 
-            <!-- Page numbers -->
             <% for (let p = 1; p <= totalPages; p++) { %>
                 <% if (p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)) { %>
-                <a href="/admin/orders?page=<%= p %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+                <a href="/admin/orders?page=<%= p %>&year=<%= selectedYear %>&month=<%= selectedMonth %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
                     class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-black transition-all
                     <%= p === currentPage ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50' %>">
                     <%= p %>
@@ -246,9 +331,8 @@
                 <% } %>
             <% } %>
 
-            <!-- Next -->
             <% if (currentPage < totalPages) { %>
-            <a href="/admin/orders?page=<%= currentPage + 1 %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
+            <a href="/admin/orders?page=<%= currentPage + 1 %>&year=<%= selectedYear %>&month=<%= selectedMonth %>&status=<%= statusFilter %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>"
                 class="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
                 Next
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
@@ -259,7 +343,6 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
             </span>
             <% } %>
-
         </div>
         <% } %>
 
@@ -267,137 +350,122 @@
 
     <%- include("partials/footer") %>
 
-
     <!-- Order Items Modal -->
     <div id="orderItemsModal" class="hidden fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
-        <!-- Backdrop -->
         <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeOrderItems()"></div>
-
-        <!-- Sheet / Panel -->
-        <div class="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden"
-             style="max-height: 88vh;">
-
-            <!-- Drag handle (mobile) -->
-            <div class="flex justify-center pt-3 pb-1 sm:hidden shrink-0">
-                <div class="w-10 h-1 bg-zinc-200 rounded-full"></div>
-            </div>
-
-            <!-- Header -->
-            <div class="px-6 pt-4 pb-4 sm:pt-5 border-b border-zinc-100 shrink-0">
+        <div class="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden" style="max-height: 88vh;">
+            <div class="flex justify-center pt-3 pb-1 sm:hidden shrink-0"><div class="w-10 h-1 bg-zinc-200 rounded-full"></div></div>
+            <div class="px-6 pt-4 pb-4 border-b border-zinc-100 shrink-0">
                 <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
                         <p class="text-[10px] font-black uppercase tracking-widest text-green-600 mb-0.5">Order Items</p>
-                        <h2 class="font-black text-zinc-900 text-lg leading-tight truncate" id="modalOrderTitle"></h2>
+                        <h2 class="font-black text-zinc-900 text-lg leading-tight truncate" id="modalOrderTitle">Loading…</h2>
                         <p class="text-xs text-zinc-400 font-medium mt-0.5" id="modalOrderMeta"></p>
                     </div>
-                    <button onclick="closeOrderItems()"
-                        class="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-red-50 hover:text-red-500 transition-all text-zinc-400 mt-0.5">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
+                    <button onclick="closeOrderItems()" class="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-red-50 hover:text-red-500 transition-all text-zinc-400 mt-0.5">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
             </div>
-
-            <!-- Items list -->
-            <div class="overflow-y-auto flex-1 px-6 py-4 space-y-3" id="modalItemsList"></div>
-
-            <!-- Footer -->
-            <div class="px-6 py-4 border-t border-zinc-100 shrink-0 bg-zinc-50/80">
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-xs font-black text-zinc-500 uppercase tracking-widest">Order Total</span>
-                    <span class="text-2xl font-black text-green-700" id="modalOrderTotal"></span>
+            <div class="overflow-y-auto flex-1 px-6 py-4 space-y-3" id="modalItemsList">
+                <div id="modalSkeleton" class="space-y-3">
+                    <% [1,2,3].forEach(() => { %>
+                    <div class="flex items-center gap-4 bg-zinc-50 rounded-2xl p-3 animate-pulse">
+                        <div class="w-16 h-16 rounded-xl bg-zinc-200 shrink-0"></div>
+                        <div class="flex-1 space-y-2"><div class="h-3 bg-zinc-200 rounded-full w-3/4"></div><div class="h-2.5 bg-zinc-100 rounded-full w-1/2"></div></div>
+                        <div class="h-3 bg-zinc-200 rounded-full w-16"></div>
+                    </div>
+                    <% }) %>
                 </div>
-                <p class="text-[12px] text-zinc-500 font-medium" id="modalItemCount"></p>
             </div>
-
+            <div class="px-6 py-4 border-t border-zinc-100 shrink-0 bg-zinc-50/80">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-black text-zinc-400 uppercase tracking-widest">Order Total</p>
+                        <p class="text-[10px] text-zinc-400 font-medium mt-0.5" id="modalItemCount"></p>
+                    </div>
+                    <span class="text-2xl font-black text-green-700" id="modalOrderTotal">—</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Embed order data -->
     <script>
-    const ORDER_ITEMS_DATA = {
-        <% orders.forEach((order, i) => { %>
-        '<%= order.id %>': {
-            customer: '<%= ((order.addresses?.first_name || "") + " " + (order.addresses?.last_name || "")).trim().replace(/'/g, "\'") %>',
-            orderId: '#<%= order.id.toString().slice(0, 8) %>',
-            date: '<%= toISTDisplay(order.created_at) %>',
-            total: <%= order.total %>,
-            items: <%- JSON.stringify(order.order_items.map(item => ({
-                name: item.product_name,
-                qty: item.quantity,
-                price: item.price,
-                weight: item.variant_weight || '',
-                image: item.product_image || ''
-            }))) %>
-        }<%= i < orders.length - 1 ? ',' : '' %>
-        <% }) %>
-    };
-
     function openOrderItems(orderId) {
-        const data = ORDER_ITEMS_DATA[orderId];
-        if (!data) return;
-
-        document.getElementById('modalOrderTitle').textContent = data.customer || 'Order Details';
-        document.getElementById('modalOrderMeta').textContent = data.orderId + '  ·  ' + data.date;
-        document.getElementById('modalOrderTotal').textContent = 'Rs. ' + data.total.toLocaleString('en-IN');
-        document.getElementById('modalItemCount').textContent =
-            data.items.length + ' item' + (data.items.length !== 1 ? 's' : '') +
-            '  ·  Total qty: ' + data.items.reduce((s, i) => s + i.qty, 0);
-
-        const list = document.getElementById('modalItemsList');
-        list.innerHTML = data.items.map((item, idx) => {
-            const lineTotal = (item.price * item.qty).toLocaleString('en-IN');
-            const unitPrice = item.price.toLocaleString('en-IN');
-            return `
-            <div class="flex items-center gap-4 bg-white border border-zinc-100 rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                <!-- Image -->
-                <div class="w-16 h-16 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-100 shrink-0">
-                    ${item.image
-                        ? `<img src="${item.image}" class="w-full h-full object-cover" loading="lazy">`
-                        : `<div class="w-full h-full flex items-center justify-center">
-                             <svg class="w-7 h-7 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
-                             </svg>
-                           </div>`
-                    }
-                </div>
-
-                <!-- Details -->
-                <div class="flex-1 min-w-0">
-                    <p class="font-black text-zinc-900 text-sm leading-tight truncate">${item.name}</p>
-                    <div class="flex items-center gap-2 mt-1.5 flex-wrap">
-                        ${item.weight ? `<span class="inline-flex items-center gap-1 bg-zinc-100 text-zinc-600 text-[10px] font-black px-2 py-0.5 rounded-full">
-                            
-                            ${item.weight}
-                        </span>` : ''}
-                        <span class="inline-flex items-center bg-blue-50 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-full">
-                            ×${item.qty}
-                        </span>
-                        <span class="text-[10px] text-zinc-500 font-bold">@ Rs. ${unitPrice}</span>
-                    </div>
-                </div>
-
-                <!-- Line total -->
-                <div class="shrink-0 text-right">
-                    <p class="font-black text-zinc-900">Rs. ${lineTotal}</p>
-                </div>
-            </div>`;
-        }).join('');
-
         const modal = document.getElementById('orderItemsModal');
         modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
+        document.getElementById('modalOrderTitle').textContent = 'Loading…';
+        document.getElementById('modalOrderMeta').textContent = '';
+        document.getElementById('modalOrderTotal').textContent = '—';
+        document.getElementById('modalItemCount').textContent = '';
+        document.getElementById('modalSkeleton').classList.remove('hidden');
+        document.querySelectorAll('.modal-item-card').forEach(el => el.remove());
+
+        fetch(`/admin/order-items/${orderId}`)
+            .then(r => r.json())
+            .then(data => { if (data.error) renderModalError(data.error); else renderModal(data); })
+            .catch(() => renderModalError('Failed to load items.'));
+    }
+
+    function renderModal(data) {
+        const { order, items } = data;
+        document.getElementById('modalOrderTitle').textContent = order.customer || 'Order Details';
+        document.getElementById('modalOrderMeta').textContent = '#' + order.id.slice(0, 8) + '  ·  ' + order.email;
+        document.getElementById('modalOrderTotal').textContent = 'Rs. ' + order.total.toLocaleString('en-IN');
+        document.getElementById('modalItemCount').textContent = items.length + ' item' + (items.length !== 1 ? 's' : '') + '  ·  qty: ' + items.reduce((s,i) => s + i.quantity, 0);
+        document.getElementById('modalSkeleton').classList.add('hidden');
+        const list = document.getElementById('modalItemsList');
+
+        if (items.length === 0) {
+            const el = document.createElement('div');
+            el.className = 'modal-item-card text-center py-10';
+            el.innerHTML = `<p class="text-zinc-400 font-bold text-sm">No item details available</p><p class="text-zinc-300 text-xs mt-1">Order placed before system update</p>`;
+            list.appendChild(el); return;
+        }
+
+        items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'modal-item-card flex items-center gap-4 bg-white border border-zinc-100 rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow';
+            card.innerHTML = `
+                <div class="w-16 h-16 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-100 shrink-0 flex items-center justify-center">
+                    ${item.product_image
+                        ? `<img src="${item.product_image}" class="w-full h-full object-cover" loading="lazy" onerror="this.parentElement.innerHTML='<svg class=\\'w-7 h-7 text-zinc-200\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'1.5\\' d=\\'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z\\'/></svg>'">`
+                        : `<svg class="w-7 h-7 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>`
+                    }
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-black text-zinc-900 text-sm leading-tight">${item.product_name}</p>
+                    <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        ${item.variant_weight ? `<span class="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-100 text-[10px] font-black px-2 py-0.5 rounded-full">${item.variant_weight}</span>` : ''}
+                        <span class="inline-flex items-center bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-black px-2 py-0.5 rounded-full">×${item.quantity}</span>
+                        <span class="text-[10px] text-zinc-400 font-bold">@ Rs. ${Number(item.price).toLocaleString('en-IN')}</span>
+                    </div>
+                </div>
+                <div class="shrink-0 text-right">
+                    <p class="font-black text-zinc-900 text-sm">Rs. ${(item.price * item.quantity).toLocaleString('en-IN')}</p>
+                </div>`;
+            list.appendChild(card);
+        });
+    }
+
+    function renderModalError(msg) {
+        document.getElementById('modalSkeleton').classList.add('hidden');
+        document.getElementById('modalOrderTitle').textContent = 'Error';
+        const el = document.createElement('div');
+        el.className = 'modal-item-card text-center py-10';
+        el.innerHTML = `<p class="text-red-400 font-bold text-sm">${msg}</p>`;
+        document.getElementById('modalItemsList').appendChild(el);
     }
 
     function closeOrderItems() {
         document.getElementById('orderItemsModal').classList.add('hidden');
         document.body.style.overflow = '';
+        document.querySelectorAll('.modal-item-card').forEach(el => el.remove());
+        document.getElementById('modalSkeleton').classList.remove('hidden');
     }
 
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') closeOrderItems();
-    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOrderItems(); });
     </script>
 
 </body>

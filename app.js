@@ -285,6 +285,9 @@ app.post("/signup", async (req, res) => {
   if (!/^[0-9]{10}$/.test(mobile.trim())) {
     return renderErr("Mobile number must be exactly 10 digits.");
   }
+  if (password.length < 6) {
+    return renderErr("Password must be at least 6 characters.");
+  }
 
   // Check mobile uniqueness against profiles table
   const { data: existingMobile } = await supabase
@@ -297,42 +300,31 @@ app.post("/signup", async (req, res) => {
     return renderErr("This mobile number is already registered.");
   }
 
-  // Check email uniqueness by attempting signUp first.
-  // Supabase silently accepts duplicate emails but returns user with empty identities[].
-  // We use this to detect duplicates BEFORE sending any OTP.
-  const { data: probeData, error: probeError } = await supabase.auth.signUp({
-    email: email.trim(),
-    password,
-    options: { data: { _probe: true } }, // mark as probe attempt
-  });
+  // Check email uniqueness against profiles table (no auth.signUp probe — avoids double email)
+  const { data: existingEmail } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("email", email.trim().toLowerCase())
+    .maybeSingle();
 
-  if (probeError) {
-    return renderErr("Signup failed: " + probeError.message);
-  }
-
-  // If identities array is empty, this email is already registered in Supabase Auth
-  if (!probeData.user || probeData.user.identities?.length === 0) {
+  if (existingEmail) {
     return renderErr("This email is already registered. Please log in.");
   }
 
-  // Email is fresh — but we need to delete this probe user before creating the real one
-  // Store the user id to clean up after OTP verification if needed
-  const probeUserId = probeData.user.id;
-
   // Generate OTP and store pending signup in session (expires in 10 min)
+  // Auth user is NOT created yet — created only after OTP is verified
   const otp = generateOTP();
   req.session.pendingSignup = {
     name: name.trim(),
-    email: email.trim(),
+    email: email.trim().toLowerCase(),
     password,
     mobile: mobile.trim(),
     otp,
-    probeUserId, // auth user already created — just needs profile on verify
-    expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0,
   };
 
-  // Send OTP email
+  // Send OTP email (only one email — no Supabase confirmation email triggered)
   try {
     await transporter.sendMail({
       from: `"GardenRich" <${process.env.EMAIL_USER}>`,
@@ -388,12 +380,44 @@ app.post("/verify-otp", async (req, res) => {
     return renderVerify(`Incorrect code. ${5 - pending.attempts + 1} attempt${5 - pending.attempts + 1 === 1 ? "" : "s"} remaining.`);
   }
 
-  // OTP correct — account was already created as a probe during signup validation.
-  // We just need to insert the profile record using the stored userId.
-  const { name, email, mobile, probeUserId } = pending;
+  // OTP correct — now create the auth user (first time auth.signUp is called, no email triggered)
+  const { name, email, mobile, password } = pending;
+
+  if (!supabaseAdmin) {
+    // Fallback: use regular signUp if no service key (Supabase may still send confirmation email)
+    const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({ email, password });
+    if (signUpErr) {
+      console.error("SignUp Error:", signUpErr.message);
+      return renderVerify("Failed to create account. Please try again.");
+    }
+    const userId = signUpData.user?.id;
+    await supabase.from("profiles").insert([{ id: userId, name, email, mobile }]);
+    delete req.session.pendingSignup;
+    req.session.user = { id: userId, email, name, role: "USER" };
+    return res.redirect("/");
+  }
+
+  // Use admin.createUser — creates user with email already confirmed, no email sent by Supabase
+  const { data: newUser, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { name },
+  });
+
+  if (createErr) {
+    console.error("createUser Error:", createErr.message);
+    // If email already exists in auth (race condition), try to find the user
+    if (createErr.message.toLowerCase().includes("already") || createErr.message.toLowerCase().includes("exists")) {
+      return renderVerify("This email is already registered. Please log in.");
+    }
+    return renderVerify("Failed to create account. Please try again.");
+  }
+
+  const userId = newUser.user.id;
 
   const { error: profileError } = await supabase.from("profiles").insert([
-    { id: probeUserId, name, email, mobile },
+    { id: userId, name, email, mobile },
   ]);
 
   if (profileError) {
@@ -403,7 +427,7 @@ app.post("/verify-otp", async (req, res) => {
   delete req.session.pendingSignup;
 
   req.session.user = {
-    id: probeUserId,
+    id: userId,
     email,
     name,
     role: "USER",
@@ -812,29 +836,35 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
   const adminClient = supabaseAdmin || supabase;
   const PAGE_SIZE = 10;
 
-  // Pagination params
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const statusFilter = req.query.status || 'all';
-  const searchQuery = (req.query.search || '').trim().toLowerCase();
+  // ── Date/filter params ──────────────────────────────────
+  const nowIST = new Date(Date.now() + IST_OFFSET);
+  const currentYear  = nowIST.getUTCFullYear();
+  const currentMonth = nowIST.getUTCMonth() + 1; // 1-12
 
-  // --- Stats: always computed from ALL orders (no pagination) ---
-  const { data: allOrders, error: allErr } = await adminClient
+  const selectedYear  = parseInt(req.query.year)  || currentYear;
+  const selectedMonth = parseInt(req.query.month) || currentMonth;
+  const selectedMonthStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+
+  const page        = Math.max(1, parseInt(req.query.page) || 1);
+  const statusFilter = req.query.status || 'all';
+  const searchQuery  = (req.query.search || '').trim().toLowerCase();
+
+  // ── Stats: always from ALL orders (for dashboard cards) ──
+  const { data: allOrders } = await adminClient
     .from("orders")
     .select("id, total, created_at, status, email")
     .order("created_at", { ascending: false });
 
-  if (allErr) console.error("All orders fetch error:", allErr.message);
-
-  const nowIST = new Date(Date.now() + IST_OFFSET);
-  const today = nowIST.toISOString().slice(0, 10);
+  const today     = nowIST.toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
 
-  const todayOrders = (allOrders || []).filter(o => toISTDate(o.created_at) === today);
-  const thisMonthOrders = (allOrders || []).filter(o => toISTMonth(o.created_at) === thisMonth).length;
+  const todayOrders      = (allOrders || []).filter(o => toISTDate(o.created_at) === today);
+  const thisMonthOrders  = (allOrders || []).filter(o => toISTMonth(o.created_at) === thisMonth).length;
   const thisMonthRevenue = (allOrders || [])
     .filter(o => toISTMonth(o.created_at) === thisMonth)
     .reduce((acc, o) => acc + o.total, 0);
 
+  // ── Monthly stats for breakdown table ────────────────────
   const monthlyStats = {};
   (allOrders || []).forEach(order => {
     const month = toISTMonth(order.created_at);
@@ -843,13 +873,17 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
     monthlyStats[month].total += order.total;
   });
 
-  // Status counts for tab badges
-  const statusCounts = { all: (allOrders || []).length };
+  // ── Available months for the month picker ────────────────
+  const availableMonths = Object.keys(monthlyStats).sort().reverse(); // newest first
+
+  // ── Status counts for the SELECTED month ─────────────────
+  const monthOrders = (allOrders || []).filter(o => toISTMonth(o.created_at) === selectedMonthStr);
+  const statusCounts = { all: monthOrders.length };
   ['pending','confirmed','shipped','delivered','cancelled'].forEach(s => {
-    statusCounts[s] = (allOrders || []).filter(o => o.status === s).length;
+    statusCounts[s] = monthOrders.filter(o => o.status === s).length;
   });
 
-  // --- Paginated orders fetch ---
+  // ── Paginated orders fetch (selected month only) ──────────
   let query = adminClient
     .from("orders")
     .select("*, addresses(*)")
@@ -860,27 +894,30 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
   const { data: rawOrders, error: ordersError } = await query;
   if (ordersError) console.error("Orders fetch error:", ordersError.message);
 
-  // Apply search filter in memory (name, email, id)
+  // Filter to selected month + search
   let filteredOrders = (rawOrders || []).filter(order => {
+    const inMonth = toISTMonth(order.created_at) === selectedMonthStr;
+    if (!inMonth) return false;
     if (!searchQuery) return true;
-    const name = ((order.addresses?.first_name || '') + ' ' + (order.addresses?.last_name || '')).toLowerCase();
+    const name  = ((order.addresses?.first_name || '') + ' ' + (order.addresses?.last_name || '')).toLowerCase();
     const email = (order.email || '').toLowerCase();
-    const id = (order.id || '').toString().toLowerCase();
+    const id    = (order.id || '').toString().toLowerCase();
     return name.includes(searchQuery) || email.includes(searchQuery) || id.includes(searchQuery);
   });
 
-  const totalOrders = filteredOrders.length;
-  const totalPages = Math.max(1, Math.ceil(totalOrders / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
+  const totalOrders  = filteredOrders.length;
+  const totalPages   = Math.max(1, Math.ceil(totalOrders / PAGE_SIZE));
+  const currentPage  = Math.min(page, totalPages);
   const paginatedOrders = filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // Selected month revenue (for display)
+  const selectedMonthRevenue = monthOrders.reduce((acc, o) => acc + o.total, 0);
 
   // Fetch order_items for this page only
   const orders = await Promise.all(
     paginatedOrders.map(async (order) => {
       const { data: items, error: itemsErr } = await adminClient
-        .from("order_items")
-        .select("*")
-        .eq("order_id", order.id);
+        .from("order_items").select("*").eq("order_id", order.id);
       if (itemsErr) console.error(`order_items error for ${order.id}:`, itemsErr.message);
       return { ...order, order_items: items || [] };
     })
@@ -892,6 +929,11 @@ app.get("/admin/orders", isAdmin, async (req, res) => {
     thisMonthOrders,
     thisMonthRevenue,
     monthlyStats,
+    availableMonths,
+    selectedMonth,
+    selectedYear,
+    selectedMonthStr,
+    selectedMonthRevenue,
     statusCounts,
     currentPage,
     totalPages,
@@ -1436,7 +1478,6 @@ app.post("/checkout", async (req, res) => {
       product_image: item.product_image,
       quantity: item.quantity,
       price: item.price,
-      variant_weight: item.weight || null,
     }));
 
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
@@ -1654,6 +1695,64 @@ app.get("/delivery", async (req, res) => {
     const settings = {};
     (settingsRows || []).forEach(s => { settings[s.key] = s.value; });
     res.render("delivery", { settings });
+});
+
+// ── Admin: Order items detail (for popup modal) ──────────────
+app.get("/admin/order-items/:orderId", isAdmin, async (req, res) => {
+  try {
+    const adminClient = supabaseAdmin || supabase;
+    const { orderId } = req.params;
+
+    // Fetch order + address
+    const { data: order } = await adminClient
+      .from("orders")
+      .select("id, total, created_at, email, status, addresses(*)")
+      .eq("id", orderId)
+      .single();
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    // Fetch items
+    const { data: items } = await adminClient
+      .from("order_items")
+      .select("*")
+      .eq("order_id", orderId);
+
+    // Enrich items with variant weight from product_variants (join by product_name + price)
+    // Since we don't store variant_id in order_items, match by product name to get the weight
+    const enriched = await Promise.all((items || []).map(async (item) => {
+      // Try to find variant by price match to get weight
+      const { data: variants } = await adminClient
+        .from("product_variants")
+        .select("weight, price, product_id, products(name)")
+        .eq("price", item.price);
+
+      // Find best match: same product name + price
+      const match = (variants || []).find(v =>
+        v.products?.name?.toLowerCase() === item.product_name?.toLowerCase()
+      );
+
+      return {
+        ...item,
+        variant_weight: match?.weight || null,
+      };
+    }));
+
+    res.json({
+      order: {
+        id: order.id,
+        total: order.total,
+        created_at: order.created_at,
+        email: order.email,
+        status: order.status,
+        customer: ((order.addresses?.first_name || '') + ' ' + (order.addresses?.last_name || '')).trim(),
+      },
+      items: enriched,
+    });
+  } catch (err) {
+    console.error("Order items fetch error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Admin: Notifications (new orders since timestamp) ────────
