@@ -314,7 +314,7 @@ app.post("/signup", async (req, res) => {
     return renderErr("This mobile number is already registered.");
   }
 
-  // Check email uniqueness against profiles table (no auth.signUp probe — avoids double email)
+  // Check email uniqueness against profiles table
   const { data: existingEmail } = await supabase
     .from("profiles")
     .select("id")
@@ -323,6 +323,19 @@ app.post("/signup", async (req, res) => {
 
   if (existingEmail) {
     return renderErr("This email is already registered. Please log in.");
+  }
+
+  // Also check auth.users for orphaned accounts (profile never created — abandoned signup)
+  // and clean them up so the user can re-register cleanly
+  if (supabaseAdmin) {
+    const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const orphanedUser = (authList?.users || []).find(
+      u => u.email?.toLowerCase() === email.trim().toLowerCase()
+    );
+    if (orphanedUser) {
+      // Auth user exists but no profile — delete the orphaned auth user silently
+      await supabaseAdmin.auth.admin.deleteUser(orphanedUser.id);
+    }
   }
 
   // Block rapid resubmits — if a pending signup already exists for the same email
@@ -1480,6 +1493,17 @@ app.post("/checkout", async (req, res) => {
     // ── Resolve address ───────────────────────────────────────
     let addressId;
     if (selected_address) {
+      // Security: verify this address actually belongs to the current user
+      const { data: ownedAddr } = await supabase
+        .from("addresses")
+        .select("id")
+        .eq("id", selected_address)
+        .eq("user_id", req.session.user.id)
+        .maybeSingle();
+
+      if (!ownedAddr) {
+        return res.status(403).send("Invalid address selection.");
+      }
       addressId = selected_address;
     } else {
       const { data: newAddr, error: addrError } = await supabase
@@ -1518,15 +1542,18 @@ app.post("/checkout", async (req, res) => {
       product_image: item.product_image,
       quantity: item.quantity,
       price: item.price,
+      variant_weight: item.weight || null,
     }));
 
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
     if (itemsError) {
       console.error("order_items insert failed:", itemsError.message);
+      // Clean up the orphaned order so it doesn't appear with no items
+      await supabase.from("orders").delete().eq("id", order.id);
       throw new Error("Failed to save order items: " + itemsError.message);
     }
 
-    // ── Decrement stock ───────────────────────────────────────
+    // ── Decrement stock (direct update — no RPC dependency) ───
     await Promise.all(
       cartItems.map(async (item) => {
         let variantId = item.variant_id;
@@ -1538,13 +1565,19 @@ app.post("/checkout", async (req, res) => {
           if (!vLookup) return;
           variantId = vLookup.id;
         }
+
+        // Re-fetch current stock and decrement atomically
         const { data: vData } = await supabase
           .from("product_variants").select("stock").eq("id", variantId).single();
         if (!vData) return;
+
         const newStock = Math.max(0, vData.stock - item.quantity);
-        await supabase.rpc("update_variant_stock", {
-          p_variant_id: variantId, p_new_stock: newStock,
-        });
+        const { error: stockErr } = await supabase
+          .from("product_variants")
+          .update({ stock: newStock })
+          .eq("id", variantId);
+
+        if (stockErr) console.error(`Stock update failed for variant ${variantId}:`, stockErr.message);
       })
     );
 
@@ -1585,7 +1618,7 @@ app.post("/checkout", async (req, res) => {
     // Non-blocking emails — failure won't cancel a successful order
     transporter.sendMail({
       from: `"GardenRich Orders" <${process.env.EMAIL_USER}>`,
-      to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com" || "prajjwalj02@gmail.com",
+      to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com",
       cc: process.env.EMAIL_USER,
       subject: `🛒 New Order #${order.id.toString().slice(0, 8)} — Rs. ${total.toLocaleString("en-IN")}`,
       html: `
