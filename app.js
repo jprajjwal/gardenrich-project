@@ -55,6 +55,20 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_KEY
     })
   : null;
 
+// ── In-memory pending signup store ───────────────────────────
+// Avoids cookie-session 4KB limit — only a small token is stored in the cookie.
+// Map: token → { name, email, mobile, password, otp, expiresAt, createdAt, attempts }
+const pendingSignups = new Map();
+
+function cleanupExpiredSignups() {
+  const now = Date.now();
+  for (const [token, data] of pendingSignups) {
+    if (now > data.expiresAt) pendingSignups.delete(token);
+  }
+}
+// Clean up every 5 minutes
+setInterval(cleanupExpiredSignups, 5 * 60 * 1000);
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
@@ -312,19 +326,22 @@ app.post("/signup", async (req, res) => {
   }
 
   // Block rapid resubmits — if a pending signup already exists for the same email
-  // and was created less than 60 seconds ago, reject silently
-  if (req.session.pendingSignup && req.session.pendingSignup.email === email.trim().toLowerCase()) {
-    const elapsed = Date.now() - (req.session.pendingSignup.createdAt || 0);
-    if (elapsed < 60 * 1000) {
-      // Already sent recently — go straight to OTP page, don't send another email
-      return res.render("verify-otp", { email: email.trim(), error: null });
+  // and was sent less than 60 seconds ago, go straight to OTP page
+  if (req.session.signupToken) {
+    const existing = pendingSignups.get(req.session.signupToken);
+    if (existing && existing.email === email.trim().toLowerCase()) {
+      const elapsed = Date.now() - (existing.createdAt || 0);
+      if (elapsed < 60 * 1000) {
+        return res.render("verify-otp", { email: email.trim(), error: null });
+      }
     }
   }
 
-  // Generate OTP and store pending signup in session (expires in 10 min)
-  // Auth user is NOT created yet — created only after OTP is verified
+  // Generate OTP — store signup data in server memory, only token in cookie
   const otp = generateOTP();
-  req.session.pendingSignup = {
+  const signupToken = require('crypto').randomBytes(24).toString('hex');
+
+  pendingSignups.set(signupToken, {
     name: name.trim(),
     email: email.trim().toLowerCase(),
     password,
@@ -333,7 +350,10 @@ app.post("/signup", async (req, res) => {
     expiresAt: Date.now() + 10 * 60 * 1000,
     createdAt: Date.now(),
     attempts: 0,
-  };
+  });
+
+  // Store only the tiny token in the cookie (stays well under 4KB)
+  req.session.signupToken = signupToken;
 
   // Send OTP email (only one email — no Supabase confirmation email triggered)
   try {
@@ -365,25 +385,30 @@ app.post("/signup", async (req, res) => {
 // ── OTP verification ──────────────────────────────────────────
 app.post("/verify-otp", async (req, res) => {
   const { otp } = req.body;
-  const pending = req.session.pendingSignup;
+
+  // Look up pending signup from server-side Map using token stored in cookie
+  const token = req.session.signupToken;
+  const pending = token ? pendingSignups.get(token) : null;
 
   const renderVerify = (err) =>
     res.render("verify-otp", { email: pending?.email || "", error: err });
 
   if (!pending) {
-    return res.render("verify-otp", { email: "", error: "Session expired. Please sign up again." });
+    return res.render("signup", { error: "Session expired. Please sign up again." });
   }
 
   // Check expiry
   if (Date.now() > pending.expiresAt) {
-    delete req.session.pendingSignup;
+    pendingSignups.delete(token);
+    delete req.session.signupToken;
     return res.render("signup", { error: "OTP expired. Please sign up again." });
   }
 
   // Max 5 attempts
   pending.attempts += 1;
   if (pending.attempts > 5) {
-    delete req.session.pendingSignup;
+    pendingSignups.delete(token);
+    delete req.session.signupToken;
     return res.render("signup", { error: "Too many incorrect attempts. Please sign up again." });
   }
 
@@ -403,7 +428,8 @@ app.post("/verify-otp", async (req, res) => {
     }
     const userId = signUpData.user?.id;
     await supabase.from("profiles").insert([{ id: userId, name, email, mobile }]);
-    delete req.session.pendingSignup;
+    pendingSignups.delete(token);
+    delete req.session.signupToken;
     req.session.user = { id: userId, email, name, role: "USER" };
     return res.redirect("/");
   }
@@ -435,7 +461,8 @@ app.post("/verify-otp", async (req, res) => {
     console.error("Profile Error:", profileError.message);
   }
 
-  delete req.session.pendingSignup;
+  pendingSignups.delete(token);
+  delete req.session.signupToken;
 
   req.session.user = {
     id: userId,
@@ -449,16 +476,18 @@ app.post("/verify-otp", async (req, res) => {
 
 // Resend OTP
 app.post("/resend-otp", async (req, res) => {
-  const pending = req.session.pendingSignup;
+  const token = req.session.signupToken;
+  const pending = token ? pendingSignups.get(token) : null;
 
   if (!pending) {
     return res.render("signup", { error: "Session expired. Please sign up again." });
   }
 
-  // Refresh OTP and expiry
+  // Refresh OTP and expiry (Map entry updated in place)
   const newOtp = generateOTP();
   pending.otp = newOtp;
   pending.expiresAt = Date.now() + 10 * 60 * 1000;
+  pending.createdAt = Date.now();
   pending.attempts = 0;
 
   try {
@@ -1556,7 +1585,7 @@ app.post("/checkout", async (req, res) => {
     // Non-blocking emails — failure won't cancel a successful order
     transporter.sendMail({
       from: `"GardenRich Orders" <${process.env.EMAIL_USER}>`,
-      to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com",
+      to: process.env.ADMIN_EMAIL || "sahilcingh@gmail.com" || "prajjwalj02@gmail.com",
       cc: process.env.EMAIL_USER,
       subject: `🛒 New Order #${order.id.toString().slice(0, 8)} — Rs. ${total.toLocaleString("en-IN")}`,
       html: `
