@@ -55,19 +55,47 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_KEY
     })
   : null;
 
-// ── In-memory pending signup store ───────────────────────────
-// Avoids cookie-session 4KB limit — only a small token is stored in the cookie.
-// Map: token → { name, email, mobile, password, otp, expiresAt, createdAt, attempts }
-const pendingSignups = new Map();
+// ── Supabase-backed pending signup store ─────────────────────
+// Vercel serverless resets in-memory state on every request.
+// We store pending signups in the settings table as JSON, keyed by token.
+// Only the tiny token is stored in the cookie (no 4KB limit issue).
 
-function cleanupExpiredSignups() {
-  const now = Date.now();
-  for (const [token, data] of pendingSignups) {
-    if (now > data.expiresAt) pendingSignups.delete(token);
-  }
+async function getPendingSignup(token) {
+  if (!token) return null;
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "signup_" + token)
+    .maybeSingle();
+  if (!data) return null;
+  try {
+    const parsed = JSON.parse(data.value);
+    // Check expiry
+    if (Date.now() > parsed.expiresAt) {
+      await deletePendingSignup(token);
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
 }
-// Clean up every 5 minutes
-setInterval(cleanupExpiredSignups, 5 * 60 * 1000);
+
+async function setPendingSignup(token, data) {
+  await supabase.from("settings").upsert(
+    { key: "signup_" + token, value: JSON.stringify(data) },
+    { onConflict: "key" }
+  );
+}
+
+async function updatePendingSignup(token, updates) {
+  const current = await getPendingSignup(token);
+  if (!current) return;
+  await setPendingSignup(token, { ...current, ...updates });
+}
+
+async function deletePendingSignup(token) {
+  if (!token) return;
+  await supabase.from("settings").delete().eq("key", "signup_" + token);
+}
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -341,7 +369,7 @@ app.post("/signup", async (req, res) => {
   // Block rapid resubmits — if a pending signup already exists for the same email
   // and was sent less than 60 seconds ago, go straight to OTP page
   if (req.session.signupToken) {
-    const existing = pendingSignups.get(req.session.signupToken);
+    const existing = await getPendingSignup(req.session.signupToken);
     if (existing && existing.email === email.trim().toLowerCase()) {
       const elapsed = Date.now() - (existing.createdAt || 0);
       if (elapsed < 60 * 1000) {
@@ -350,11 +378,11 @@ app.post("/signup", async (req, res) => {
     }
   }
 
-  // Generate OTP — store signup data in server memory, only token in cookie
+  // Generate OTP — store signup data in Supabase, only tiny token in cookie
   const otp = generateOTP();
   const signupToken = require('crypto').randomBytes(24).toString('hex');
 
-  pendingSignups.set(signupToken, {
+  await setPendingSignup(signupToken, {
     name: name.trim(),
     email: email.trim().toLowerCase(),
     password,
@@ -399,9 +427,9 @@ app.post("/signup", async (req, res) => {
 app.post("/verify-otp", async (req, res) => {
   const { otp } = req.body;
 
-  // Look up pending signup from server-side Map using token stored in cookie
+  // Look up pending signup from Supabase using token stored in cookie
   const token = req.session.signupToken;
-  const pending = token ? pendingSignups.get(token) : null;
+  const pending = await getPendingSignup(token);
 
   const renderVerify = (err) =>
     res.render("verify-otp", { email: pending?.email || "", error: err });
@@ -410,23 +438,21 @@ app.post("/verify-otp", async (req, res) => {
     return res.render("signup", { error: "Session expired. Please sign up again." });
   }
 
-  // Check expiry
-  if (Date.now() > pending.expiresAt) {
-    pendingSignups.delete(token);
-    delete req.session.signupToken;
-    return res.render("signup", { error: "OTP expired. Please sign up again." });
-  }
+  // Check expiry (getPendingSignup already returns null if expired)
+  // pending being null is handled above
 
   // Max 5 attempts
-  pending.attempts += 1;
-  if (pending.attempts > 5) {
-    pendingSignups.delete(token);
+  const newAttempts = (pending.attempts || 0) + 1;
+  await updatePendingSignup(token, { attempts: newAttempts });
+
+  if (newAttempts > 5) {
+    await deletePendingSignup(token);
     delete req.session.signupToken;
     return res.render("signup", { error: "Too many incorrect attempts. Please sign up again." });
   }
 
   if (otp.trim() !== pending.otp) {
-    return renderVerify(`Incorrect code. ${5 - pending.attempts + 1} attempt${5 - pending.attempts + 1 === 1 ? "" : "s"} remaining.`);
+    return renderVerify(`Incorrect code. ${6 - newAttempts} attempt${6 - newAttempts === 1 ? "" : "s"} remaining.`);
   }
 
   // OTP correct — now create the auth user (first time auth.signUp is called, no email triggered)
@@ -441,7 +467,7 @@ app.post("/verify-otp", async (req, res) => {
     }
     const userId = signUpData.user?.id;
     await supabase.from("profiles").insert([{ id: userId, name, email, mobile }]);
-    pendingSignups.delete(token);
+    await deletePendingSignup(token);
     delete req.session.signupToken;
     req.session.user = { id: userId, email, name, role: "USER" };
     return res.redirect("/");
@@ -474,7 +500,7 @@ app.post("/verify-otp", async (req, res) => {
     console.error("Profile Error:", profileError.message);
   }
 
-  pendingSignups.delete(token);
+  await deletePendingSignup(token);
   delete req.session.signupToken;
 
   req.session.user = {
@@ -490,18 +516,20 @@ app.post("/verify-otp", async (req, res) => {
 // Resend OTP
 app.post("/resend-otp", async (req, res) => {
   const token = req.session.signupToken;
-  const pending = token ? pendingSignups.get(token) : null;
+  const pending = await getPendingSignup(token);
 
   if (!pending) {
     return res.render("signup", { error: "Session expired. Please sign up again." });
   }
 
-  // Refresh OTP and expiry (Map entry updated in place)
+  // Refresh OTP and expiry in Supabase
   const newOtp = generateOTP();
-  pending.otp = newOtp;
-  pending.expiresAt = Date.now() + 10 * 60 * 1000;
-  pending.createdAt = Date.now();
-  pending.attempts = 0;
+  await updatePendingSignup(token, {
+    otp: newOtp,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    createdAt: Date.now(),
+    attempts: 0,
+  });
 
   try {
     await transporter.sendMail({
